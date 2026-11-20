@@ -83,11 +83,15 @@ final class SerialServo {
         if (System.currentTimeMillis() - lastRequestAt < 15000) return;   // 别反复弹授权框
         lastRequestAt = System.currentTimeMillis();
         try {
+            // UsbManager.requestPermission 需要往 PendingIntent 写入 EXTRA_DEVICE/GRANTED，
+            // Android 12+ 必须用 FLAG_MUTABLE（且配合 setPackage 满足 Android 14+ 安全要求），不能用 IMMUTABLE
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                flags |= PendingIntent.FLAG_MUTABLE;
+            }
             PendingIntent pi = PendingIntent.getBroadcast(ctx, 0,
                     new Intent(ACTION_PERMISSION).setPackage(ctx.getPackageName()),
-                    PendingIntent.FLAG_UPDATE_CURRENT
-                            | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                            ? PendingIntent.FLAG_IMMUTABLE : 0));
+                    flags);
             usbManager.requestPermission(device, pi);
             Log.i(TAG, "servo usb permission requested");
         } catch (Exception e) {
