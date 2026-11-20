@@ -1,0 +1,94 @@
+name: Release HachimoDock_Phone
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag name (e.g. v0.2.0)'
+        required: true
+        default: 'v0.2.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 34 platform and build-tools
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build Android APK (includes bundled FP16 KWS ONNX & audio assets)
+        run: gradle -p android :hachimo:assembleDebug --no-daemon
+
+      - name: Verify APK 16KB page alignment & signature
+        run: |
+          APK="android/hachimo/build/outputs/apk/debug/hachimo-debug.apk"
+          "${ANDROID_HOME}/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
+          python3 - <<'EOF'
+          import zipfile, struct
+          apk = "android/hachimo/build/outputs/apk/debug/hachimo-debug.apk"
+          with zipfile.ZipFile(apk) as z, open(apk, "rb") as fp:
+              for info in z.infolist():
+                  if not info.filename.endswith(".so"):
+                      continue
+                  fp.seek(info.header_offset + 26)
+                  fn_len, ex_len = struct.unpack("<HH", fp.read(4))
+                  off = info.header_offset + 30 + fn_len + ex_len
+                  assert info.compress_type == 0 and off % 16384 == 0, (info.filename, info.compress_type, off % 16384)
+          print("All .so libraries verified uncompressed and 16KB ZIP-aligned")
+          EOF
+
+      - name: Package release artifacts
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          mkdir -p release_dist
+          cp android/hachimo/build/outputs/apk/debug/hachimo-debug.apk "release_dist/HachimoPhone-${TAG_NAME}.apk"
+          zip -r "release_dist/HachimoDock_Phone-PC-Bridge-${TAG_NAME}.zip" bridge esp32 .trae README.md \
+            -x "bridge/token.txt" "bridge/config.json" "bridge/*.lnk" "esp32/**/.pio/*"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          NOTES=$(cat <<'EOF'
+          ## HachimoDock_Phone ${TAG_NAME}
+
+          ### 安装说明
+          - **手机端 APK**：直接下载 `HachimoPhone-${TAG_NAME}.apk` 安装（已内置端侧 FP16 KWS 唤醒词 ONNX 模型、试听音色样本与宠物素材；支持 Android 7.0+ / arm64-v8a，已完成 Android 16 16KB 页对齐适配）。
+          - **PC Bridge & ESP32 云台（可选）**：下载 `HachimoDock_Phone-PC-Bridge-${TAG_NAME}.zip`，PC 端运行 `node bridge/start-all.mjs` 即可联动 Claude Code / Codex / Trae。
+
+          ### 端侧离线模型说明
+          - **端侧唤醒词（已内置 APK）**：`sherpa-onnx` Zipformer KWS（encoder FP16 量化）。
+          - **本地童声 VITS / 人脸 ArcFace**：首次在手机端启用「本机童声」或「ML Kit 人脸记忆」时自动按需下载，不强制占用安装包体积。
+          EOF
+          )
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" release_dist/* --clobber
+          else
+            gh release create "${TAG_NAME}" release_dist/* \
+              --title "HachimoDock_Phone ${TAG_NAME}" \
+              --notes "${NOTES}"
+          fi
