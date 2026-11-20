@@ -203,9 +203,16 @@ final class PhoneVoice {
         return v == null || v.trim().isEmpty() ? "glm-4v-flash" : v.trim();
     }
 
-    /** 是否配好了视觉模型（智谱免费 GLM-4.6V-Flash） */
+    /** 是否配好了视觉模型（智谱免费 glm-4v-flash，或阿里云百炼 qwen-vl-plus） */
     static boolean vlmReady(Context c) {
-        return !zhipuKey(c).isEmpty();
+        return !zhipuKey(c).isEmpty() || !dashVlmKey(c).isEmpty();
+    }
+
+    private static String dashVlmKey(Context c) {
+        String dk = dashKey(c);
+        if (!dk.isEmpty() && planPaid(c)) return dk;
+        if (!asrKey(c).isEmpty() && asrBase(c).contains("dashscope")) return asrKey(c);
+        return "";
     }
 
     // ------------------------------------------------------------ 免费/付费方案一键切换
@@ -215,9 +222,11 @@ final class PhoneVoice {
     static final String FREE_CHAT_MODEL = "Qwen/Qwen3-8B";
     static final String PAID_BASE = "https://api.deepseek.com/v1";
     static final String PAID_CHAT_MODEL = "deepseek-chat";
-    /** 付费方案 = v0.1.0 tag 那一版：阿里云识别 + CosyVoice 发音 + DeepSeek 对话 */
+    /** 付费方案：一个阿里云 DashScope Key 跑通全部（识别 + DeepSeek-V3 对话 + CosyVoice + 看图） */
     static final String DASH_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1";
     static final String DASH_ASR_MODEL = "qwen3-asr-flash";
+    static final String DASH_CHAT_MODEL = "deepseek-v3";
+    static final String DASH_VLM_MODEL = "qwen-vl-plus";
     static final String DASH_TTS_MODEL = "cosyvoice-v3-flash";
     static final String DASH_TTS_VOICE = "longjielidou_v3";
 
@@ -246,7 +255,10 @@ final class PhoneVoice {
     }
 
     static String deepseekKey(Context c) {
-        return BridgeService.prefs(c).getString("deepseek_key", "");
+        String v = BridgeService.prefs(c).getString("deepseek_key", "");
+        if (!v.isEmpty()) return v;
+        if (chatBase(c).contains("deepseek")) return chatKey(c);
+        return "";
     }
 
     static void setDeepseekKey(Context c, String v) {
@@ -258,13 +270,14 @@ final class PhoneVoice {
     }
 
     /**
-     * 一键切换方案：
+     * 一键切换方案（即使尚未填 Key 也允许切换界面与模型预设，方便用户先切过去再填 Key）：
      *   免费 = 硅基识别 + 硅基 Qwen3-8B 对话 + 本机离线童声
      *   付费 = v0.1.0 tag 那一版：阿里云 qwen3-asr-flash + DeepSeek + CosyVoice
      *
-     * @return 空串表示成功，否则是缺少的配置提示
+     * @return 空串表示配置齐全，否则返回待补充 Key 的提示
      */
     static String applyPlan(Context c, boolean paid) {
+        String hint = "";
         if (paid) {
             // 切付费前先保留用户在免费框里填过的硅基 Key，防止切回免费版时丢失
             String existingSf = siliconKey(c);
@@ -273,14 +286,19 @@ final class PhoneVoice {
             }
             String dk = dashKey(c);
             String ds = deepseekKey(c);
-            if (dk.isEmpty()) return "缺阿里云 DashScope Key";
-            if (ds.isEmpty()) return "缺 DeepSeek Key";
             setAsrKey(c, dk);
             setAsrBase(c, DASH_BASE);
             setAsrModel(c, DASH_ASR_MODEL);
-            setChatKey(c, ds);
-            setChatBase(c, PAID_BASE);
-            setChatModel(c, PAID_CHAT_MODEL);
+            // 若未填独立 DeepSeek Key，直接复用同一个阿里云 DashScope Key 调百炼托管的 deepseek-v3
+            if (ds.isEmpty()) {
+                setChatKey(c, dk);
+                setChatBase(c, DASH_BASE);
+                setChatModel(c, DASH_CHAT_MODEL);
+            } else {
+                setChatKey(c, ds);
+                setChatBase(c, PAID_BASE);
+                setChatModel(c, PAID_CHAT_MODEL);
+            }
             setTtsMode(c, TTS_MODE_DASHSCOPE);
             setTtsModel(c, DASH_TTS_MODEL);
             setTtsVoice(c, DASH_TTS_VOICE);
@@ -288,9 +306,18 @@ final class PhoneVoice {
             if (BridgeService.wakeMode(c) == BridgeService.WAKE_MODE_ASR) {
                 BridgeService.setWakeMode(c, BridgeService.WAKE_MODE_SMART);
             }
+            if (dk.isEmpty()) hint = "请填写阿里云 DashScope Key";
         } else {
+            // 切免费前保留已填过的付费 Key，避免来回切换丢失
+            String existingDk = dashKey(c);
+            if (!existingDk.isEmpty() && BridgeService.prefs(c).getString("dashscope_key", "").isEmpty()) {
+                setDashKey(c, existingDk);
+            }
+            String existingDs = deepseekKey(c);
+            if (!existingDs.isEmpty() && BridgeService.prefs(c).getString("deepseek_key", "").isEmpty()) {
+                setDeepseekKey(c, existingDs);
+            }
             String sf = siliconKey(c);
-            if (sf.isEmpty()) return "缺硅基 Key";
             setAsrKey(c, sf);
             setAsrBase(c, FREE_BASE);
             setAsrModel(c, FREE_ASR_MODEL);
@@ -300,17 +327,22 @@ final class PhoneVoice {
             setTtsMode(c, TTS_MODE_LOCAL);
             // 免费方案 ASR 不花钱：切到全量兜底模式把唤醒率拉满
             BridgeService.setWakeMode(c, BridgeService.WAKE_MODE_ASR);
+            if (sf.isEmpty()) hint = "请填写硅基流动 Key";
         }
         BridgeService.prefs(c).edit().putBoolean("plan_paid", paid).apply();
-        return "";
+        return hint;
     }
 
-    /** 把一帧 JPEG 交给视觉模型，让它按 question 描述画面（免费模型） */
+    /** 把一帧 JPEG 交给视觉模型：优先智谱免费 glm-4v-flash，未填且为阿里云方案时复用阿里云 qwen-vl-plus */
     static void describeImage(Context c, byte[] jpeg, String question, TextCallback cb) {
         final Context app = c.getApplicationContext();
-        final String key = zhipuKey(app);
+        String zpKey = zhipuKey(app);
+        String dashVlm = zpKey.isEmpty() ? dashVlmKey(app) : "";
+        final String key = !zpKey.isEmpty() ? zpKey : dashVlm;
+        final String url = !zpKey.isEmpty() ? (zhipuBase(app) + "/chat/completions") : (DASH_BASE + "/chat/completions");
+        final String model = !zpKey.isEmpty() ? vlmModel(app) : DASH_VLM_MODEL;
         if (key.isEmpty()) {
-            postError(cb, "还没填智谱视觉 Key");
+            postError(cb, "还没填智谱或阿里云视觉 Key");
             return;
         }
         if (jpeg == null || jpeg.length == 0) {
@@ -320,9 +352,9 @@ final class PhoneVoice {
         final String b64 = android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP);
         new Thread(() -> {
             try {
-                Log.i(TAG, "vlm req model=" + vlmModel(app) + " jpeg=" + jpeg.length + "B");
+                Log.i(TAG, "vlm req model=" + model + " jpeg=" + jpeg.length + "B");
                 JSONObject body = new JSONObject();
-                body.put("model", vlmModel(app));
+                body.put("model", model);
                 body.put("max_tokens", 60);
                 JSONArray messages = new JSONArray();
                 messages.put(new JSONObject().put("role", "system").put("content",
@@ -340,7 +372,7 @@ final class PhoneVoice {
                 messages.put(new JSONObject().put("role", "user").put("content", content));
                 body.put("messages", messages);
 
-                JSONObject out = post(app, zhipuBase(app) + "/chat/completions", key, body, 60);
+                JSONObject out = post(app, url, key, body, 60);
                 if (out == null) {
                     Log.w(TAG, "vlm fail: network null");
                     postError(cb, "看图失败：网络错误");

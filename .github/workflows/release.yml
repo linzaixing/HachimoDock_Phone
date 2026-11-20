@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag name (e.g. v0.2.1)'
+        description: 'Release tag name (e.g. v1.0.0)'
         required: true
-        default: 'v0.2.1'
+        default: 'v1.0.0'
 
 permissions:
   contents: write
@@ -44,29 +44,36 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build Android APK (includes bundled FP16 KWS ONNX & audio assets)
+      - name: Build Lite & Full Release APKs (R8 minified + signed)
         run: |
           sed -i 's|mirrors.cloud.tencent.com/gradle|services.gradle.org/distributions|' android/gradle/wrapper/gradle-wrapper.properties
           chmod +x android/gradlew
           cd android
-          ./gradlew :hachimo:assembleDebug --no-daemon
+          ./gradlew :hachimo:assembleLiteRelease :hachimo:assembleFullRelease --no-daemon
 
-      - name: Verify APK 16KB page alignment & signature
+      - name: Verify 16KB page alignment & signatures on both APKs
         run: |
-          APK="android/hachimo/build/outputs/apk/debug/hachimo-debug.apk"
-          "${ANDROID_HOME}/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
+          for APK in \
+            android/hachimo/build/outputs/apk/lite/release/hachimo-lite-release.apk \
+            android/hachimo/build/outputs/apk/full/release/hachimo-full-release.apk; do
+            "${ANDROID_HOME}/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
+          done
           python3 - <<'EOF'
           import zipfile, struct
-          apk = "android/hachimo/build/outputs/apk/debug/hachimo-debug.apk"
-          with zipfile.ZipFile(apk) as z, open(apk, "rb") as fp:
-              for info in z.infolist():
-                  if not info.filename.endswith(".so"):
-                      continue
-                  fp.seek(info.header_offset + 26)
-                  fn_len, ex_len = struct.unpack("<HH", fp.read(4))
-                  off = info.header_offset + 30 + fn_len + ex_len
-                  assert info.compress_type == 0 and off % 16384 == 0, (info.filename, info.compress_type, off % 16384)
-          print("All .so libraries verified uncompressed and 16KB ZIP-aligned")
+          apks = [
+              "android/hachimo/build/outputs/apk/lite/release/hachimo-lite-release.apk",
+              "android/hachimo/build/outputs/apk/full/release/hachimo-full-release.apk",
+          ]
+          for apk in apks:
+              with zipfile.ZipFile(apk) as z, open(apk, "rb") as fp:
+                  for info in z.infolist():
+                      if not info.filename.endswith(".so"):
+                          continue
+                      fp.seek(info.header_offset + 26)
+                      fn_len, ex_len = struct.unpack("<HH", fp.read(4))
+                      off = info.header_offset + 30 + fn_len + ex_len
+                      assert info.compress_type == 0 and off % 16384 == 0, (apk, info.filename, info.compress_type, off % 16384)
+              print("Verified 16KB ZIP-aligned:", apk)
           EOF
 
       - name: Package release artifacts
@@ -74,7 +81,8 @@ jobs:
           TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           mkdir -p release_dist
-          cp android/hachimo/build/outputs/apk/debug/hachimo-debug.apk "release_dist/HachimoPhone-${TAG_NAME}.apk"
+          cp android/hachimo/build/outputs/apk/lite/release/hachimo-lite-release.apk "release_dist/HachimoPhone-${TAG_NAME}-lite.apk"
+          cp android/hachimo/build/outputs/apk/full/release/hachimo-full-release.apk "release_dist/HachimoPhone-${TAG_NAME}-full.apk"
           zip -r "release_dist/HachimoDock_Phone-PC-Bridge-${TAG_NAME}.zip" bridge esp32 .trae README.md \
             -x "bridge/token.txt" "bridge/config.json" "bridge/*.lnk" "esp32/**/.pio/*"
 
@@ -86,13 +94,10 @@ jobs:
           {
             echo "## HachimoDock_Phone ${TAG_NAME}"
             echo ""
-            echo "### 安装说明"
-            echo "- **手机端 APK**：直接下载 \`HachimoPhone-${TAG_NAME}.apk\` 安装（已内置端侧 FP16 KWS 唤醒词 ONNX 模型、试听音色样本与宠物素材；支持 Android 7.0+ / arm64-v8a，已完成 Android 16 16KB 页对齐适配）。"
+            echo "### 安装包选择（R8 优化压缩，均支持 Android 7.0+ / arm64-v8a 与 Android 16 16KB 页对齐）"
+            echo "- **推荐 · 轻量版 \`HachimoPhone-${TAG_NAME}-lite.apk\`**：包含端侧 FP16 KWS 唤醒、离线童声、免费/付费语音对话、智谱 VLM 语义看图、系统人脸云台追踪、PC Bridge 与 USB 串口控制；不含 ML Kit/重复 ONNX Runtime，体积大幅精简。"
+            echo "- **全功能版 \`HachimoPhone-${TAG_NAME}-full.apk\`**：在轻量版基础上额外内置离线 ML Kit 骨架/标签/人脸检测与 ArcFace 家人记忆。"
             echo "- **PC Bridge & ESP32 云台（可选）**：下载 \`HachimoDock_Phone-PC-Bridge-${TAG_NAME}.zip\`，PC 端运行 \`node bridge/start-all.mjs\` 即可联动 Claude Code / Codex / Trae。"
-            echo ""
-            echo "### 端侧离线模型说明"
-            echo "- **端侧唤醒词（已内置 APK）**：\`sherpa-onnx\` Zipformer KWS（encoder FP16 量化）。"
-            echo "- **本地童声 VITS / 人脸 ArcFace**：首次在手机端启用「本机童声」或「ML Kit 人脸记忆」时自动按需下载，不强制占用安装包体积。"
           } > release_dist/NOTES.md
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
             gh release upload "${TAG_NAME}" release_dist/*.apk release_dist/*.zip --clobber

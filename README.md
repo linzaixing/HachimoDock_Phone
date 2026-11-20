@@ -86,14 +86,18 @@
 
 ```bash
 cd android
-./gradlew :hachimo:assembleDebug
-adb install -r hachimo/build/outputs/apk/debug/hachimo-debug.apk
+# 轻量版（推荐，约 38.5 MB）：含 KWS 唤醒、离线童声、VLM 语义看图、系统人脸云台追踪与 Bridge
+./gradlew :hachimo:assembleLiteRelease
+adb install -r hachimo/build/outputs/apk/lite/release/hachimo-lite-release.apk
+
+# 全功能版（约 107.5 MB）：额外内置 ML Kit 骨架/标签/人脸检测与 ArcFace 家人记忆
+./gradlew :hachimo:assembleFullRelease
 ```
 
 ### 2. 配置手机端（纯手机模式可跳过第 3 步）
 
-1. 打开 **HachimoPhone** 控制台，选择 **「免费 (硅基+本机)」** 或 **「付费 (阿里+DeepSeek)」**。
-2. 填入对应 API Key（纯免费对话与识别仅需 1 个硅基流动 Key；如需看图问答，补充智谱免费 Key 即可；本机 Ollama 等局域网小模型免 Key）。
+1. 打开 **HachimoPhone** 控制台，选择 **「免费 (硅基 1 Key)」** 或 **「付费 (阿里云 1 Key)」**。
+2. 只需填写 **1 个主 Key**：免费版填硅基流动 Key（可选配智谱免费 Key 看图），付费版填阿里云 DashScope Key（一码全通 `qwen3-asr-flash` + `deepseek-v3` + `cosyvoice-v3-flash` + `qwen-vl-plus`）；本机 Ollama 等局域网小模型免 Key。
 3. 点击 **「保存语音与模型配置」**；如使用折叠屏合盖自启，点 **「开启外屏常驻」** 授予悬浮窗权限，再点 **「打开外屏展示页」**。
 
 ### 3. 启动 PC Bridge（可选，联动电脑 Agent）

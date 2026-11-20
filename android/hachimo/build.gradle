@@ -8,10 +8,32 @@ android {
         applicationId "com.example.hachimophone"
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName "0.2.0"
-        // 只保留 arm64：onnxruntime 四个 ABI 会白白撑大 APK
+        versionCode 3
+        versionName "1.0.0"
+        // 只保留 arm64：四个 ABI 会白白撑大 APK
         ndk { abiFilters 'arm64-v8a' }
+    }
+
+    flavorDimensions += 'tier'
+    productFlavors {
+        lite {
+            dimension 'tier'
+            versionNameSuffix '-lite'
+        }
+        full {
+            dimension 'tier'
+            versionNameSuffix '-full'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // 开源直装签名：未配独立签名证书时用 debug keystore 签名，让 Release APK 也可直接安装
+            signingConfig signingConfigs.debug
+        }
     }
 
     packaging {
@@ -33,18 +55,20 @@ dependencies {
 
     // 轻量纯 Java 的 WebSocket 客户端，不拉 kotlin-stdlib，离线缓存也能构建
     implementation 'com.squareup.okhttp3:okhttp:3.9.1'
+    implementation 'androidx.core:core:1.13.1'
 
-    // 对话期间的人体跟踪：CameraX 取帧 + ML Kit 姿态/图像标签，全部端侧离线
+    // 对话按需拍照给云端 VLM：CameraX 取帧（lite 与 full 共用）
     implementation 'androidx.camera:camera-core:1.4.2'
     implementation 'androidx.camera:camera-camera2:1.4.2'
     implementation 'androidx.camera:camera-lifecycle:1.4.2'
-    // 调试用相机小预览窗
     implementation 'androidx.camera:camera-view:1.4.2'
-    implementation 'com.google.mlkit:pose-detection:18.0.0-beta5'
-    implementation 'com.google.mlkit:image-labeling:17.0.9'
-    // 人脸检测 + 本地人脸特征（ArcFace MobileFaceNet，模型首次使用时下载）
-    implementation 'com.google.mlkit:face-detection:16.1.7'
-    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.22.0'
+
     // ESP32-C3 走 Type-C OTG 的 USB CDC 串口
     implementation 'com.github.mik3y:usb-serial-for-android:3.7.0'
+
+    // full 版额外打入端侧 ML Kit 姿态/标签/人脸 + ArcFace ONNX Runtime
+    fullImplementation 'com.google.mlkit:pose-detection:18.0.0-beta5'
+    fullImplementation 'com.google.mlkit:image-labeling:17.0.9'
+    fullImplementation 'com.google.mlkit:face-detection:16.1.7'
+    fullImplementation 'com.microsoft.onnxruntime:onnxruntime-android:1.22.0'
 }

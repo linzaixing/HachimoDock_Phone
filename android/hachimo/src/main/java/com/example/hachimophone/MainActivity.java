@@ -146,33 +146,32 @@ public final class MainActivity extends Activity implements AppState.Listener {
         segLp.bottomMargin = dp(10);
         voiceCard.addView(planSegment, segLp);
 
-        final TextView freePlanTab = pillButton("免费 (硅基+本机)", ACCENT_CYAN, ACCENT_TEXT_DARK);
+        final TextView freePlanTab = pillButton("免费 (硅基 1 Key)", ACCENT_CYAN, ACCENT_TEXT_DARK);
         freePlanTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        final TextView paidPlanTab = pillButton("付费 (阿里+DeepSeek)", Color.TRANSPARENT, TEXT_SECONDARY);
+        final TextView paidPlanTab = pillButton("付费 (阿里云 1 Key)", Color.TRANSPARENT, TEXT_SECONDARY);
         paidPlanTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         addWeight(planSegment, freePlanTab, 1f, 4);
         addWeight(planSegment, paidPlanTab, 1f, 0);
 
-        // 常用 Key（精简清晰：仅展示核心密钥，自定义底层字段折叠在高级抽屉）
+        // 常用 Key（精简清晰：每套方案只填 1 个核心 Key，其余全部可选或折叠在高级抽屉）
         final EditText siliconKeyInput = styledInput(
                 "硅基流动 Key（免费识别 + 对话共用，sk-…）", PhoneVoice.siliconKey(this), true);
         final EditText zhipuKeyInput = styledInput(
                 "智谱 Key（可选，免费视觉看图 glm-4v-flash）", PhoneVoice.zhipuKey(this), true);
         final EditText deepseekKeyInput = styledInput(
-                "DeepSeek Key（付费对话，sk-…）", PhoneVoice.deepseekKey(this), true);
+                "DeepSeek 官方独立 Key（可选，留空走阿里云 deepseek-v3）", PhoneVoice.deepseekKey(this), true);
         final EditText dashKeyInput = styledInput(
-                "阿里云 DashScope Key（付费识别/CosyVoice，sk-…）", PhoneVoice.dashKey(this), true);
+                "阿里云 DashScope Key（一个 Key 全通，sk-…）", PhoneVoice.dashKey(this), true);
 
         final LinearLayout freeKeysBox = new LinearLayout(this);
         freeKeysBox.setOrientation(LinearLayout.VERTICAL);
-        addLabeledField(freeKeysBox, "硅基流动 Key（免费主力）", siliconKeyInput);
+        addLabeledField(freeKeysBox, "硅基流动 Key（免费主力 · 1 Key 全通）", siliconKeyInput);
         addLabeledField(freeKeysBox, "智谱 Key（可选 · 免费看图）", zhipuKeyInput);
         voiceCard.addView(freeKeysBox);
 
         final LinearLayout paidKeysBox = new LinearLayout(this);
         paidKeysBox.setOrientation(LinearLayout.VERTICAL);
-        addLabeledField(paidKeysBox, "阿里云 DashScope Key（识别 + CosyVoice）", dashKeyInput);
-        addLabeledField(paidKeysBox, "DeepSeek Key（对话）", deepseekKeyInput);
+        addLabeledField(paidKeysBox, "阿里云 DashScope Key（识别 + DeepSeek-V3 + CosyVoice + 看图）", dashKeyInput);
         voiceCard.addView(paidKeysBox);
 
         // 高级配置输入框（默认折叠）
@@ -248,20 +247,18 @@ public final class MainActivity extends Activity implements AppState.Listener {
 
         View.OnClickListener switchPlan = v -> {
             boolean toPaid = v == paidPlanTab;
-            // 切换前先把输入框里填好的 Key 落盘，免得用户刚输完没点保存就直接切方案报错
+            // 切换前先把当前可见/已输入的 Key 落盘，随后立即刷新 Tab 与输入框（不再因缺 Key 拦截切换）
             PhoneVoice.setSiliconKey(this, siliconKeyInput.getText().toString());
             PhoneVoice.setZhipuKey(this, zhipuKeyInput.getText().toString());
             PhoneVoice.setDashKey(this, dashKeyInput.getText().toString());
             PhoneVoice.setDeepseekKey(this, deepseekKeyInput.getText().toString());
-            String err = PhoneVoice.applyPlan(this, toPaid);
-            if (!err.isEmpty()) {
-                Toast.makeText(this, err + "，请先填写后再切换", Toast.LENGTH_LONG).show();
-                return;
-            }
+            String hintMsg = PhoneVoice.applyPlan(this, toPaid);
             refreshPlan[0].run();
             refreshTtsBtn[0].run();
             syncAdvancedFields.run();
-            Toast.makeText(this, toPaid ? "已切到付费方案" : "已切到免费方案", Toast.LENGTH_SHORT).show();
+            String msg = toPaid ? "已切到付费方案" : "已切到免费方案";
+            if (!hintMsg.isEmpty()) msg += "（" + hintMsg + "）";
+            Toast.makeText(this, msg, hintMsg.isEmpty() ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
         };
         freePlanTab.setOnClickListener(switchPlan);
         paidPlanTab.setOnClickListener(switchPlan);
@@ -357,6 +354,8 @@ public final class MainActivity extends Activity implements AppState.Listener {
         addWeight(ttsPair, voiceInput, 1f, 0);
         advDrawer.addView(ttsPair);
 
+        addLabeledField(advDrawer, "DeepSeek 官方独立 Key（可选，留空自动用阿里云 DeepSeek）", deepseekKeyInput);
+
         saveCloud.setOnClickListener(v -> {
             String sf = siliconKeyInput.getText().toString().trim();
             String zp = zhipuKeyInput.getText().toString().trim();
@@ -369,6 +368,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
 
             String ab = asrBaseInput.getText().toString().trim();
             String cb = baseInput.getText().toString().trim();
+            String cm = modelInput.getText().toString().trim();
             String ak = asrKeyInput.getText().toString().trim();
             String ck = chatKeyInput.getText().toString().trim();
             boolean paid = PhoneVoice.planPaid(this);
@@ -378,7 +378,20 @@ public final class MainActivity extends Activity implements AppState.Listener {
                 if (ck.isEmpty() && !zp.isEmpty() && cb.contains("bigmodel.cn")) ck = zp;
             } else {
                 if (!dk.isEmpty() && ab.contains("dashscope")) ak = dk;
-                if (!ds.isEmpty() && cb.contains("deepseek")) ck = ds;
+                if (!ds.isEmpty()) {
+                    ck = ds;
+                    if (cb.contains("dashscope")) {
+                        cb = PhoneVoice.PAID_BASE;
+                        cm = PhoneVoice.PAID_CHAT_MODEL;
+                    }
+                } else if (!dk.isEmpty() && (cb.contains("dashscope") || cb.contains("deepseek"))) {
+                    // 没填独立 DeepSeek Key 时自动走阿里云百炼的 deepseek-v3，只需 1 个 Key
+                    ck = dk;
+                    cb = PhoneVoice.DASH_BASE;
+                    if (cm.equals(PhoneVoice.PAID_CHAT_MODEL) || cm.isEmpty()) {
+                        cm = PhoneVoice.DASH_CHAT_MODEL;
+                    }
+                }
             }
             if (ak.isEmpty() && !ck.isEmpty() && ab.contains("siliconflow") && cb.contains("siliconflow")) ak = ck;
             if (ck.isEmpty() && !ak.isEmpty() && ab.contains("siliconflow") && cb.contains("siliconflow")) ck = ak;
@@ -388,13 +401,15 @@ public final class MainActivity extends Activity implements AppState.Listener {
             }
             asrKeyInput.setText(ak);
             chatKeyInput.setText(ck);
+            baseInput.setText(cb);
+            modelInput.setText(cm);
 
             PhoneVoice.setAsrKey(this, ak);
             PhoneVoice.setAsrBase(this, ab);
             PhoneVoice.setAsrModel(this, asrModelInput.getText().toString());
             PhoneVoice.setChatKey(this, ck);
             PhoneVoice.setChatBase(this, cb);
-            PhoneVoice.setChatModel(this, modelInput.getText().toString());
+            PhoneVoice.setChatModel(this, cm);
             PhoneVoice.setTtsBase(this, ttsBaseInput.getText().toString());
             PhoneVoice.setTtsModel(this, ttsModelInput.getText().toString());
             PhoneVoice.setTtsVoice(this, voiceInput.getText().toString());

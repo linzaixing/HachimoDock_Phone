@@ -75,10 +75,10 @@ public final class BridgeService extends Service {
         try {
             android.content.pm.PackageInfo pi =
                     c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
-            String ver = pi.versionName == null || pi.versionName.isEmpty() ? "0.2.0" : pi.versionName;
+            String ver = pi.versionName == null || pi.versionName.isEmpty() ? "1.0.0" : pi.versionName;
             return ver + " (" + pi.versionCode + ")";
         } catch (Exception e) {
-            return "0.2.0";
+            return "1.0.0";
         }
     }
 
