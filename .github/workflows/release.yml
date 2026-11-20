@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag name (e.g. v0.2.0)'
+        description: 'Release tag name (e.g. v0.2.1)'
         required: true
-        default: 'v0.2.0'
+        default: 'v0.2.1'
 
 permissions:
   contents: write
@@ -30,16 +30,22 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android 34 platform and build-tools
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - name: Accept licenses and install Android 34 SDK
+        shell: bash
+        run: |
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" >/dev/null
 
-      - name: Set up Gradle 8.7
+      - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
 
       - name: Build Android APK (includes bundled FP16 KWS ONNX & audio assets)
-        run: gradle -p android :hachimo:assembleDebug --no-daemon
+        run: |
+          sed -i 's|mirrors.cloud.tencent.com/gradle|services.gradle.org/distributions|' android/gradle/wrapper/gradle-wrapper.properties
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :hachimo:assembleDebug --no-daemon
 
       - name: Verify APK 16KB page alignment & signature
         run: |
