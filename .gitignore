@@ -1,0 +1,28 @@
+# Gradle / IDE / 构建产物
+.gradle/
+**/build/
+**/out/
+.idea/
+.kotlin/
+*.iml
+local.properties
+android/.gradle/
+android/build.log
+
+# 安装包（不入库）
+*.apk
+*.aab
+
+# PC Bridge 本机凭证、配置与启动器产物
+bridge/token.txt
+bridge/config.json
+bridge/*.lnk
+bridge/launcher/*.ico
+HachimoPhone.exe
+
+# ESP32 PlatformIO 缓存
+esp32/**/.pio/
+
+# 系统临时文件
+.DS_Store
+Thumbs.db

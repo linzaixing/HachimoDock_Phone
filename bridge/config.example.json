@@ -1,0 +1,23 @@
+{
+  "chat": {
+    "provider": "auto",
+    "persona": "你叫哈基米，是一只住在折叠屏外屏里的西高地小狗。说话简短、口语化、有点俏皮，每次不超过 60 个字。不要使用 Markdown，不要提自己是 AI。",
+    "timeoutMs": 60000,
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-chat",
+    "apiKey": ""
+  },
+  "tts": {
+    "apiKey": "",
+    "model": "qwen3-tts-flash",
+    "voice": "Cherry",
+    "resourceId": "seed-tts-2.0",
+    "speaker": "zh_female_vv_uranus_bigtts",
+    "sampleRate": 16000
+  },
+  "asr": {
+    "apiKey": "",
+    "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen3-asr-flash"
+  }
+}

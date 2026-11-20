@@ -1,0 +1,7 @@
+sfx_done.wav（任务完成音效）
+
+来源: Wikimedia Commons, "Barking of a dog.ogg"
+作者: Amada44
+页面: https://commons.wikimedia.org/wiki/File:Barking_of_a_dog.ogg
+许可: CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/)
+修改: 裁掉首尾静音、响度归一化(loudnorm -18 LUFS)、转 22.05kHz 单声道 WAV

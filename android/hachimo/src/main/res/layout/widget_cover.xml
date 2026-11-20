@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 外屏小组件：状态 chip + 小狗缩略图 + 一行标签，尺寸按外屏 2×2 格设计 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <TextView
+        android:id="@+id/widget_chip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:letterSpacing="0.12"
+        android:maxLines="1"
+        android:text="待机"
+        android:textColor="#67E8F9"
+        android:textSize="10sp" />
+
+    <ImageView
+        android:id="@+id/widget_pet"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="2dp"
+        android:contentDescription="宠物状态"
+        android:scaleType="centerCrop"
+        android:src="@drawable/terrier_idle" />
+
+    <TextView
+        android:id="@+id/widget_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:maxLines="1"
+        android:text="未连接"
+        android:textColor="#CBD5E1"
+        android:textSize="10sp" />
+</LinearLayout>
