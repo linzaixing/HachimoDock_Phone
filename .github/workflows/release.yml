@@ -73,22 +73,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          NOTES=$(cat <<'EOF'
-          ## HachimoDock_Phone ${TAG_NAME}
-
-          ### 安装说明
-          - **手机端 APK**：直接下载 `HachimoPhone-${TAG_NAME}.apk` 安装（已内置端侧 FP16 KWS 唤醒词 ONNX 模型、试听音色样本与宠物素材；支持 Android 7.0+ / arm64-v8a，已完成 Android 16 16KB 页对齐适配）。
-          - **PC Bridge & ESP32 云台（可选）**：下载 `HachimoDock_Phone-PC-Bridge-${TAG_NAME}.zip`，PC 端运行 `node bridge/start-all.mjs` 即可联动 Claude Code / Codex / Trae。
-
-          ### 端侧离线模型说明
-          - **端侧唤醒词（已内置 APK）**：`sherpa-onnx` Zipformer KWS（encoder FP16 量化）。
-          - **本地童声 VITS / 人脸 ArcFace**：首次在手机端启用「本机童声」或「ML Kit 人脸记忆」时自动按需下载，不强制占用安装包体积。
-          EOF
-          )
+          {
+            echo "## HachimoDock_Phone ${TAG_NAME}"
+            echo ""
+            echo "### 安装说明"
+            echo "- **手机端 APK**：直接下载 \`HachimoPhone-${TAG_NAME}.apk\` 安装（已内置端侧 FP16 KWS 唤醒词 ONNX 模型、试听音色样本与宠物素材；支持 Android 7.0+ / arm64-v8a，已完成 Android 16 16KB 页对齐适配）。"
+            echo "- **PC Bridge & ESP32 云台（可选）**：下载 \`HachimoDock_Phone-PC-Bridge-${TAG_NAME}.zip\`，PC 端运行 \`node bridge/start-all.mjs\` 即可联动 Claude Code / Codex / Trae。"
+            echo ""
+            echo "### 端侧离线模型说明"
+            echo "- **端侧唤醒词（已内置 APK）**：\`sherpa-onnx\` Zipformer KWS（encoder FP16 量化）。"
+            echo "- **本地童声 VITS / 人脸 ArcFace**：首次在手机端启用「本机童声」或「ML Kit 人脸记忆」时自动按需下载，不强制占用安装包体积。"
+          } > release_dist/NOTES.md
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
-            gh release upload "${TAG_NAME}" release_dist/* --clobber
+            gh release upload "${TAG_NAME}" release_dist/*.apk release_dist/*.zip --clobber
           else
-            gh release create "${TAG_NAME}" release_dist/* \
+            gh release create "${TAG_NAME}" release_dist/*.apk release_dist/*.zip \
               --title "HachimoDock_Phone ${TAG_NAME}" \
-              --notes "${NOTES}"
+              --notes-file release_dist/NOTES.md
           fi
