@@ -121,6 +121,20 @@ node bridge/test/client.mjs
 
 ---
 
+## 3D 打印外壳
+
+`hardware/shell/v1.0.0/` 提供 v1.0.0 版手机外壳的 STL 模型，可直接导入 Bambu Studio / Cura / OrcaSlicer 等切片软件：
+
+| 文件 | 用途 |
+|---|---|
+| `外壳_1118.STL` | 主机外壳主体 |
+| `装配体2 - 后盖-相册支架-1-1.STL` | 后盖相册支架 |
+| `装配体2 - 相册支腿-1-1.STL` | 相册支腿 |
+
+> STL 只包含几何模型，不含打印参数；请在切片软件中确认尺寸、摆放方向与支撑设置，模型细节以仓库中的最新版本为准。
+
+---
+
 ## 目录结构
 
 ```text
@@ -135,6 +149,7 @@ HachimoDock_Phone/
 │   ├── asr/                # Windows System.Speech 离线兜底脚本
 │   └── launcher/           # Windows C# 单文件启动器源码
 ├── esp32/servo_control/    # ESP32-C3 SG90 双轴舵机控制固件
+├── hardware/shell/v1.0.0/  # 3D 打印外壳 STL（外壳主体 + 相册支架 + 支腿）
 └── assets/                 # 产品海报、三视图渲染与试听音频
 ```
 
