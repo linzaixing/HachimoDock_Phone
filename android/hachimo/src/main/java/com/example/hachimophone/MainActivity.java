@@ -136,7 +136,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
         // ------------------------------------------------------------ 卡片 2：语音方案与密钥
         LinearLayout voiceCard = addCard(root, "语音方案与模型");
 
-        // 分段切换：免费方案 vs 付费方案
+        // 分段切换：免费(智谱+阿里) vs 付费(阿里云) vs 小智云(免Key)
         LinearLayout planSegment = new LinearLayout(this);
         planSegment.setOrientation(LinearLayout.HORIZONTAL);
         planSegment.setBackground(roundRect(BG_INPUT, STROKE_INPUT, dp(12)));
@@ -146,20 +146,25 @@ public final class MainActivity extends Activity implements AppState.Listener {
         segLp.bottomMargin = dp(10);
         voiceCard.addView(planSegment, segLp);
 
-        final TextView freePlanTab = pillButton("免费 (智谱+阿里)", ACCENT_CYAN, ACCENT_TEXT_DARK);
-        freePlanTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        final TextView paidPlanTab = pillButton("付费 (阿里云 1 Key)", Color.TRANSPARENT, TEXT_SECONDARY);
-        paidPlanTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        final TextView freePlanTab = pillButton("免费(智谱)", ACCENT_CYAN, ACCENT_TEXT_DARK);
+        freePlanTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        final TextView paidPlanTab = pillButton("付费(阿里)", Color.TRANSPARENT, TEXT_SECONDARY);
+        paidPlanTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        final TextView xiaozhiTab = pillButton("小智云(免Key)", Color.TRANSPARENT, TEXT_SECONDARY);
+        xiaozhiTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         addWeight(planSegment, freePlanTab, 1f, 4);
-        addWeight(planSegment, paidPlanTab, 1f, 0);
+        addWeight(planSegment, paidPlanTab, 1f, 4);
+        addWeight(planSegment, xiaozhiTab, 1.05f, 0);
 
-        // 常用 Key（免费：智谱负责想 glm-4.7-flash 和看 glm-4v-flash + 阿里云每月免费语音/或本机童声；付费：阿里云 1 Key）
+        // 常用 Key（免费：智谱负责想 glm-4.7-flash 和看 glm-4v-flash + 阿里云每月免费语音/或本机童声；付费：阿里云 1 Key；小智云：免Key）
         final EditText zhipuKeyInput = styledInput(
                 "智谱 Key（永久免费 · 对话+看图共用）", PhoneVoice.zhipuKey(this), true);
         final EditText freeDashKeyInput = styledInput(
                 "阿里云 Key（每月重置 paraformer+sambert，留空用本机童声）", PhoneVoice.dashKey(this), true);
         final EditText dashKeyInput = styledInput(
                 "阿里云 DashScope Key（一个 Key 全通，sk-…）", PhoneVoice.dashKey(this), true);
+        final EditText xzOtaInput = styledInput(
+                XiaozhiClient.DEFAULT_OTA_URL, XiaozhiClient.otaUrl(this), false);
 
         final LinearLayout freeKeysBox = new LinearLayout(this);
         freeKeysBox.setOrientation(LinearLayout.VERTICAL);
@@ -172,8 +177,81 @@ public final class MainActivity extends Activity implements AppState.Listener {
         addLabeledField(paidKeysBox, "阿里云 DashScope Key（识别 + DeepSeek-V3 + CosyVoice + 看图）", dashKeyInput);
         voiceCard.addView(paidKeysBox);
 
+        final LinearLayout xiaozhiBox = new LinearLayout(this);
+        xiaozhiBox.setOrientation(LinearLayout.VERTICAL);
+        final TextView xzStatusText = new TextView(this);
+        xzStatusText.setTextColor(TEXT_SECONDARY);
+        xzStatusText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        xzStatusText.setLineSpacing(dp(3), 1f);
+        LinearLayout.LayoutParams xzStLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        xzStLp.bottomMargin = dp(8);
+        xiaozhiBox.addView(xzStatusText, xzStLp);
+        addLabeledField(xiaozhiBox, "小智 OTA 地址（默认官方云，可改自建服务器）", xzOtaInput);
+
+        final Runnable refreshXzStatus = () -> {
+            String mac = XiaozhiClient.deviceId(this);
+            String cid = XiaozhiClient.clientId(this);
+            String shortCid = cid.length() > 12 ? cid.substring(0, 8) + "…" : cid;
+            String state;
+            if (XiaozhiClient.activated(this)) {
+                state = "状态：已激活 · 可直接对话（Opus 流式）";
+                xzStatusText.setTextColor(0xFF86EFAC);
+            } else if (!XiaozhiClient.activationCode(this).isEmpty()) {
+                state = "待绑定激活码：" + XiaozhiClient.activationCode(this) + "（请去 xiaozhi.me 输入）";
+                xzStatusText.setTextColor(0xFFFDE68A);
+            } else {
+                state = "状态：未检查激活（点下方「获取激活码」发起 v1 注册）";
+                xzStatusText.setTextColor(TEXT_SECONDARY);
+            }
+            xzStatusText.setText("虚拟设备 MAC：" + mac + "  |  UUID：" + shortCid + "\n" + state);
+        };
+        refreshXzStatus.run();
+
+        LinearLayout xzBtnRow = rowLayout();
+        TextView xzActivateBtn = pillButton("获取激活码 / 测试连通", 0xFF164E63, 0xFF67E8F9);
+        xzActivateBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        xzActivateBtn.setOnClickListener(v -> {
+            XiaozhiClient.setOtaUrl(this, xzOtaInput.getText().toString());
+            xzStatusText.setTextColor(0xFF67E8F9);
+            xzStatusText.setText("正在请求 OTA（Activation-Version: 1）…");
+            XiaozhiClient.checkOtaAndActivate(this, new XiaozhiClient.OtaCallback() {
+                @Override
+                public void onNeedActivation(String code) {
+                    refreshXzStatus.run();
+                    Toast.makeText(MainActivity.this,
+                            "请前往 xiaozhi.me 输入激活码：" + code, Toast.LENGTH_LONG).show();
+                }
+
+                @Override
+                public void onReady(String wsUrl, String token) {
+                    refreshXzStatus.run();
+                    Toast.makeText(MainActivity.this, "小智云已激活就绪！", Toast.LENGTH_SHORT).show();
+                }
+
+                @Override
+                public void onError(String message) {
+                    xzStatusText.setTextColor(0xFFFCA5A5);
+                    xzStatusText.setText(message);
+                    Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+                }
+            });
+        });
+        addWeight(xzBtnRow, xzActivateBtn, 1.4f, 6);
+
+        TextView xzResetBtn = pillButton("换新设备码", BG_PILL, TEXT_PRIMARY);
+        xzResetBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        xzResetBtn.setOnClickListener(v -> {
+            XiaozhiClient.resetIdentity(this);
+            refreshXzStatus.run();
+            Toast.makeText(this, "已生成新虚拟 MAC/UUID", Toast.LENGTH_SHORT).show();
+        });
+        addWeight(xzBtnRow, xzResetBtn, 0.9f, 0);
+        xiaozhiBox.addView(xzBtnRow);
+        voiceCard.addView(xiaozhiBox);
+
         // 语音与唤醒快捷控制
-        LinearLayout ttsRow = rowLayout();
+        final LinearLayout ttsRow = rowLayout();
         final TextView ttsModeBtn = pillButton("", BG_PILL, TEXT_PRIMARY);
         final Runnable[] refreshTtsBtn = new Runnable[1];
         refreshTtsBtn[0] = () -> {
@@ -222,22 +300,41 @@ public final class MainActivity extends Activity implements AppState.Listener {
         // 方案样式联动
         final Runnable[] refreshPlan = new Runnable[1];
         refreshPlan[0] = () -> {
-            boolean paid = PhoneVoice.planPaid(this);
-            stylePill(freePlanTab, paid ? Color.TRANSPARENT : ACCENT_CYAN, paid ? TEXT_SECONDARY : ACCENT_TEXT_DARK);
-            stylePill(paidPlanTab, paid ? ACCENT_CYAN : Color.TRANSPARENT, paid ? ACCENT_TEXT_DARK : TEXT_SECONDARY);
-            freeKeysBox.setVisibility(paid ? View.GONE : View.VISIBLE);
-            paidKeysBox.setVisibility(paid ? View.VISIBLE : View.GONE);
+            int mode = PhoneVoice.planMode(this);
+            stylePill(freePlanTab, mode == PhoneVoice.PLAN_FREE ? ACCENT_CYAN : Color.TRANSPARENT,
+                    mode == PhoneVoice.PLAN_FREE ? ACCENT_TEXT_DARK : TEXT_SECONDARY);
+            stylePill(paidPlanTab, mode == PhoneVoice.PLAN_PAID ? ACCENT_CYAN : Color.TRANSPARENT,
+                    mode == PhoneVoice.PLAN_PAID ? ACCENT_TEXT_DARK : TEXT_SECONDARY);
+            stylePill(xiaozhiTab, mode == PhoneVoice.PLAN_XIAOZHI ? ACCENT_CYAN : Color.TRANSPARENT,
+                    mode == PhoneVoice.PLAN_XIAOZHI ? ACCENT_TEXT_DARK : TEXT_SECONDARY);
+            freeKeysBox.setVisibility(mode == PhoneVoice.PLAN_FREE ? View.VISIBLE : View.GONE);
+            paidKeysBox.setVisibility(mode == PhoneVoice.PLAN_PAID ? View.VISIBLE : View.GONE);
+            xiaozhiBox.setVisibility(mode == PhoneVoice.PLAN_XIAOZHI ? View.VISIBLE : View.GONE);
+            ttsRow.setVisibility(mode == PhoneVoice.PLAN_XIAOZHI ? View.GONE : View.VISIBLE);
         };
         refreshPlan[0].run();
 
         View.OnClickListener switchPlan = v -> {
-            boolean toPaid = v == paidPlanTab;
-            boolean wasPaid = PhoneVoice.planPaid(this);
-            String curDk = (wasPaid ? dashKeyInput : freeDashKeyInput).getText().toString().trim();
+            int wasMode = PhoneVoice.planMode(this);
+            String curDk = (wasMode == PhoneVoice.PLAN_PAID ? dashKeyInput : freeDashKeyInput)
+                    .getText().toString().trim();
             dashKeyInput.setText(curDk);
             freeDashKeyInput.setText(curDk);
             PhoneVoice.setZhipuKey(this, zhipuKeyInput.getText().toString());
             PhoneVoice.setDashKey(this, curDk);
+            XiaozhiClient.setOtaUrl(this, xzOtaInput.getText().toString());
+
+            if (v == xiaozhiTab) {
+                PhoneVoice.setPlanMode(this, PhoneVoice.PLAN_XIAOZHI);
+                refreshPlan[0].run();
+                refreshXzStatus.run();
+                Toast.makeText(this,
+                        XiaozhiClient.activated(this) ? "已切到小智云（免Key，已激活）"
+                                : "已切到小智云（点「获取激活码」去 xiaozhi.me 绑定）",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+            boolean toPaid = v == paidPlanTab;
             String hintMsg = PhoneVoice.applyPlan(this, toPaid);
             refreshPlan[0].run();
             refreshTtsBtn[0].run();
@@ -248,6 +345,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
         };
         freePlanTab.setOnClickListener(switchPlan);
         paidPlanTab.setOnClickListener(switchPlan);
+        xiaozhiTab.setOnClickListener(switchPlan);
 
         // 主保存按钮
         TextView saveCloud = pillButton("保存语音与模型配置", ACCENT_CYAN, ACCENT_TEXT_DARK);
@@ -258,7 +356,16 @@ public final class MainActivity extends Activity implements AppState.Listener {
         voiceCard.addView(saveCloud, saveLp);
 
         saveCloud.setOnClickListener(v -> {
-            boolean paid = PhoneVoice.planPaid(this);
+            int mode = PhoneVoice.planMode(this);
+            if (mode == PhoneVoice.PLAN_XIAOZHI) {
+                XiaozhiClient.setOtaUrl(this, xzOtaInput.getText().toString());
+                refreshXzStatus.run();
+                Toast.makeText(this, XiaozhiClient.activated(this)
+                        ? "已保存：小智云已就绪"
+                        : "已保存：请点「获取激活码」绑定小智设备", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            boolean paid = mode == PhoneVoice.PLAN_PAID;
             boolean hadDk = !PhoneVoice.dashKey(this).isEmpty();
             String prevTts = PhoneVoice.ttsMode(this);
             String zp = zhipuKeyInput.getText().toString().trim();

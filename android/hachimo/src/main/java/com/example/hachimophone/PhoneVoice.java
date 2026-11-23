@@ -121,14 +121,14 @@ final class PhoneVoice {
         BridgeService.prefs(c).edit().putString("chat_model", v == null ? "" : v.trim()).apply();
     }
 
-    /** 手机端直连识别是否就绪（已填 Key，或指向手机本机/局域网免 Key 模型） */
+    /** 手机端直连识别是否就绪（已填 Key，指向本机模型，或已启用小智云） */
     static boolean asrReady(Context c) {
-        return !asrKey(c).isEmpty() || isLocalUrl(asrBase(c));
+        return XiaozhiClient.enabled(c) || !asrKey(c).isEmpty() || isLocalUrl(asrBase(c));
     }
 
-    /** 手机端直连对话是否就绪（已填 Key，或指向手机本机/局域网免 Key 小模型） */
+    /** 手机端直连对话是否就绪（已填 Key，指向本机模型，或已启用小智云） */
     static boolean chatReady(Context c) {
-        return !chatKey(c).isEmpty() || isLocalUrl(chatBase(c));
+        return XiaozhiClient.enabled(c) || !chatKey(c).isEmpty() || isLocalUrl(chatBase(c));
     }
 
     /** TTS 模式：local（默认 0 元离线童声）/ system（0 元系统语音）/ dashscope */
@@ -279,8 +279,29 @@ final class PhoneVoice {
         BridgeService.prefs(c).edit().putString("deepseek_key", v == null ? "" : v.trim()).apply();
     }
 
+    static final int PLAN_FREE = 0;
+    static final int PLAN_PAID = 1;
+    static final int PLAN_XIAOZHI = 2;
+
+    static int planMode(Context c) {
+        android.content.SharedPreferences sp = BridgeService.prefs(c);
+        if (sp.contains("plan_mode")) {
+            int m = sp.getInt("plan_mode", PLAN_FREE);
+            return (m >= 0 && m <= 2) ? m : PLAN_FREE;
+        }
+        return sp.getBoolean("plan_paid", false) ? PLAN_PAID : PLAN_FREE;
+    }
+
+    static void setPlanMode(Context c, int mode) {
+        int m = (mode >= 0 && mode <= 2) ? mode : PLAN_FREE;
+        BridgeService.prefs(c).edit()
+                .putInt("plan_mode", m)
+                .putBoolean("plan_paid", m == PLAN_PAID)
+                .apply();
+    }
+
     static boolean planPaid(Context c) {
-        return BridgeService.prefs(c).getBoolean("plan_paid", false);
+        return planMode(c) == PLAN_PAID;
     }
 
     /**
@@ -372,7 +393,7 @@ final class PhoneVoice {
                 hint = "请填写阿里云 Key（每月免费语音）";
             }
         }
-        BridgeService.prefs(c).edit().putBoolean("plan_paid", paid).apply();
+        setPlanMode(c, paid ? PLAN_PAID : PLAN_FREE);
         return hint;
     }
 

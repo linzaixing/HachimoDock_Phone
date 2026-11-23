@@ -1117,8 +1117,12 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             public void onDone(byte[] pcm, boolean probeUsable) {
                 voiceBusy = false;
                 voiceSentAt = System.currentTimeMillis();
-                // 没连电脑：手机自己调云端识别，识别完照常走 onVoiceText 的分支
+                // 没连电脑：若启用小智云则走 Opus 端到端链路；否则调云端识别
                 if (!AppState.get().snapshot().connected) {
+                    if (!agentVoice && XiaozhiClient.enabled(DeviceActivity.this)) {
+                        startXiaozhiTurn(pcm, null);
+                        return;
+                    }
                     if (!PhoneVoice.asrReady(DeviceActivity.this)) {
                         bubble.setText("没连电脑：请在设置页填识别 Key");
                         voiceFailed();
@@ -1515,9 +1519,12 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
                 || wake.isMuted() || cue != null) return;
         if (recorder.isActive() || voiceBusy || awaitingText) return;
         int mode = BridgeService.wakeMode(this);
-        // 走阿里云识别（付费或免费 paraformer 10h/月）时均走智能分级防止长闲聊白耗额度
-        if ((PhoneVoice.planPaid(this) || PhoneVoice.asrBase(this).contains("dashscope"))
+        // 走小智云且无电脑连接时：仅认端侧离线 KWS「哈基米」或点击屏幕唤醒，避免闲聊触发小智回复
+        if (!AppState.get().snapshot().connected && XiaozhiClient.enabled(this)) {
+            mode = BridgeService.WAKE_MODE_STRICT;
+        } else if ((PhoneVoice.planPaid(this) || PhoneVoice.asrBase(this).contains("dashscope"))
                 && mode == BridgeService.WAKE_MODE_ASR) {
+            // 走阿里云识别（付费或免费 paraformer 10h/月）时均走智能分级防止长闲聊白耗额度
             mode = BridgeService.WAKE_MODE_SMART;
         }
         final int effectiveMode = mode;
@@ -1632,6 +1639,12 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             return;
         }
         waitingBridgeVoice = false;
+        if (XiaozhiClient.enabled(this)) {
+            awaitingText = false;
+            kwsWakeFollowup = false;
+            startXiaozhiTurn(pcm, null);
+            return;
+        }
         if (!PhoneVoice.asrReady(this)) {
             awaitingText = false;
             voiceFailed();
@@ -1896,8 +1909,12 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
         stopVisionForGood();
     }
 
-    /** 没连电脑时，手机直接问云端模型（支持语义判断是否返回 [CAM] 调相机） */
+    /** 没连电脑时，手机直接问云端模型（支持小智云，或语义判断是否返回 [CAM] 调相机） */
     private void cloudChat(String text) {
+        if (XiaozhiClient.enabled(this)) {
+            startXiaozhiTurn(null, text);
+            return;
+        }
         if (!PhoneVoice.chatReady(this)) {
             chatWaiting = false;
             bubble.setText("没连电脑：请在设置页填对话 Key");
@@ -2594,7 +2611,87 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
         pendingWrites.set(0);
     }
 
+    /** 小智云单轮语音/文本交互（Activation-Version: 1 + Opus 双向流式） */
+    private void startXiaozhiTurn(byte[] pcm, String textInput) {
+        stopMicForPlayback();
+        stopReply();
+        final long seq = ttsSeq;
+        chatWaiting = true;
+        chatSentAt = System.currentTimeMillis();
+        streamFrames = 0;
+        bubble.setText(textInput == null ? "小智思考中…" : ("「" + textInput + "」"));
+        hint.setVisibility(TextView.VISIBLE);
+        hint.setText(chatMode ? "说「退出」结束" : "小智响应中…");
+        XiaozhiClient.TurnListener tl = new XiaozhiClient.TurnListener() {
+            @Override
+            public void onNeedActivation(String code) {
+                if (seq != ttsSeq || !resumed) return;
+                chatWaiting = false;
+                bubble.setText("小智激活码：" + code);
+                hint.setVisibility(TextView.VISIBLE);
+                hint.setText("请前往 xiaozhi.me 绑定设备");
+                scheduleChatRestart(4000);
+            }
+
+            @Override
+            public void onStt(String text) {
+                if (seq != ttsSeq || !resumed) return;
+                if (isExitPhrase(text)) {
+                    XiaozhiClient.abort();
+                    exitChat();
+                    return;
+                }
+                bubble.setText("「" + text + "」");
+            }
+
+            @Override
+            public void onReplyText(String text) {
+                if (seq != ttsSeq || !resumed) return;
+                hint.setVisibility(chatMode ? TextView.VISIBLE : TextView.GONE);
+                bubble.setText(shortReply(text));
+            }
+
+            @Override
+            public void onAudioStart(int sampleRate) {
+                if (seq != ttsSeq || !resumed) return;
+                startAudioStream(sampleRate);
+            }
+
+            @Override
+            public void onAudioPcm(byte[] pcmChunk) {
+                if (seq != ttsSeq || !resumed) return;
+                pushAudioStream(pcmChunk);
+            }
+
+            @Override
+            public void onDone() {
+                if (seq != ttsSeq || !resumed) return;
+                chatWaiting = false;
+                if (chatTrack != null && streamFrames > 0) {
+                    endAudioStream();
+                } else {
+                    onReplySpoken();
+                }
+            }
+
+            @Override
+            public void onError(String message) {
+                if (seq != ttsSeq || !resumed) return;
+                chatWaiting = false;
+                releaseAudioTrack();
+                bubble.setText(message);
+                voiceFailed();
+            }
+        };
+        if (textInput != null) {
+            XiaozhiClient.sendTextTurn(this, textInput, tl);
+        } else {
+            XiaozhiClient.sendAudioTurn(this, pcm, tl);
+        }
+    }
+
     private void stopReply() {
+        XiaozhiClient.abort();
         ttsSeq++;
         ttsPending = false;
         releaseAudioTrack();
