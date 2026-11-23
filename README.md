@@ -33,7 +33,7 @@
 |---|---|
 | **屏幕桌宠交互** | 手机内外屏均可交互，对折叠屏手机进行了专项优化，合盖自动上外屏（`SYSTEM_ALERT_WINDOW` + 折痕传感器），动态切换状态动画与音效，支持 180° 自动人体跟随与10余组桌面宠物表情包（含宠物声音） |
 | **端侧 KWS + 连续对话** | 端侧VAD + 唤醒 + 去直流/自动增益/滑窗增强；AI对话功能有免费方案和付费方案可选，做到0门槛上手与极致体验的双重保障 |
-| **免费 / 付费双方案** | **免费版**：硅基流动免费 ASR + `Qwen/Qwen3-8B`（或智谱 `glm-4-flash` / 本地 Ollama）+ 本机离线 5 音色童声<br>**付费版**：阿里云 `qwen3-asr-flash` + `CosyVoice` + `DeepSeek` |
+| **免费 / 付费双方案** | **免费版**：智谱 `glm-4-flash` 对话 + `glm-4v-flash` 看图；可选阿里云每月重置免费的 `paraformer-realtime-v2` 识别 + `sambert-zhiying-v1` 语音，留空用本机离线童声（也兼容硅基流动 / 本地 Ollama）<br>**付费版**：阿里云 `qwen3-asr-flash` + `CosyVoice` + `DeepSeek` |
 | **按需语义看图** | 摄像头默认关闭；命中视觉线索且对话模型判定需要看现场画面时，自动打开摄像头捕捉画面上传vlm模型进行场景理解 |
 | **PC Bridge 多端采集** | 零 npm 依赖（Node ≥ 18），支持 UDP 局域网自动发现、常量时间令牌鉴权、Beacon 指纹防劫持与多 Agent 状态隔离 |
 | **USB 串口双轴云台** | 手机通过 Type-C OTG 直连 ESP32-C3（115200 8N1），输出归一化坐标 `P<x>,<y>` 驱动水平/俯仰舵机平滑跟随 |
@@ -94,9 +94,9 @@ adb install -r hachimo/build/outputs/apk/release/hachimo-release.apk
 ### 2. 配置手机端（纯手机模式可跳过第 3 步）
 
 1. 打开 **HachimoPhone** 控制台，选择 **「免费(智谱)」**、**「付费(阿里)」** 或 **「小智模式」**。
-2. **免费(智谱)**：填 **智谱 Key**（永久免费高并发 `glm-4-flash-250414` 对话 + `glm-4v-flash` 看图，遇 429 自动容灾切换）与可选 **阿里云 Key**（每月 1 日重置长期免费的 `paraformer-realtime-v2` 识别 + `sambert-zhimiao-emo-v1` 语音；留空用本机离线童声；若用百炼新版 `sk-ws-` 密钥，请在下方填入控制台右上角的 **Workspace ID** 如 `llm-xxx`）。
+2. **免费(智谱)**：填 **智谱 Key**（永久免费高并发 `glm-4-flash-250414` 对话 + `glm-4v-flash` 看图，遇 429 自动容灾切换）与可选 **阿里云 Key**（每月 1 日重置长期免费的 `paraformer-realtime-v2` 识别 + `sambert-zhiying-v1` 语音；留空用本机离线童声；若用百炼新版 `sk-ws-` 密钥，请在下方填入控制台右上角的 **Workspace ID** 如 `llm-xxx`）。
 3. **付费(阿里)**：填 1 个 **阿里云 DashScope Key**（极简低价 `qwen3.7-flash` 0.2/0.8元/百万Token 对话看图 + `qwen3-asr-flash` / `cosyvoice-v3-flash`，无额度时自动回退免费 `paraformer` 与 `sambert`；`sk-ws-` 密钥同步填 **Workspace ID**）。
-4. **小智模式（兼容自建后端）**：手动填入个人自建 [`xiaozhi-esp32-server`](https://github.com/xinnan-tech/xiaozhi-esp32-server) 或授权小智服务端的 **OTA 地址**（默认留空），点击 **「获取激活码 / 测试连通」** 完成设备绑定即可走 Opus 双向流式语音对话。
+4. **小智模式（兼容自建后端）**：手动填入个人自建 [`xiaozhi-esp32-server`](https://github.com/xinnan-tech/xiaozhi-esp32-server) 或授权小智服务端的 **OTA 地址**（默认留空），点击 **「获取激活码 / 测试连通」** 完成设备绑定即可走 Opus 双向流式语音对话。设备身份由 Android ID 派生，覆盖安装或重装都不会更换激活码；需要重置时按钮会自动在「换新设备码 / 恢复默认设备码」之间切换。
 5. 点击 **「保存语音与模型配置」**（也可点击 **「试听」** 实时验证本机/云端/系统 TTS）；如使用折叠屏合盖自启，点 **「开启外屏常驻」** 授予悬浮窗权限，再点 **「打开外屏展示页」**。
 
 ### 3. 启动 PC Bridge（可选，联动电脑 Agent）
@@ -144,7 +144,7 @@ HachimoDock_Phone/
 
 | 手机品牌 | 已测机型 | 适配状态 | 运行说明 |
 |---|---|---|---|
-| **华为 (Huawei)** | **Huawei Mate50、荣耀20** | ✅ 已测试支持 | 直板机自动在主屏完整运行语音、看图与云台功能 |
+| **华为 (Huawei)** | **Huawei Mate50、Mate60 系列（CET-AL00）、荣耀20** | ✅ 已测试支持 | 直板机自动在主屏完整运行语音、看图与云台功能 |
 | **三星 (Samsung)** | **三星 flip z50** | ✅ 已测试支持 | 折叠屏支持外屏桌宠展示、合盖自启与外屏桌面小组件 |
 | **小米 (Xiaomi)** | **小米 15 Pro** | ✅ 已测试支持 | 直板机自动在主屏完整运行 |
 | **其它品牌** | 其他 Android 机型 | 🟡 理论支持 | 满足 `Android 7.0+`（`minSdk 24`）且 `arm64-v8a` 架构理论上均可正常使用；如遇个别机型问题会持续更新适配 |
