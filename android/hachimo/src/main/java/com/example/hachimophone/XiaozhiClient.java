@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.security.SecureRandom;
@@ -18,6 +19,7 @@ import io.github.jaredmdobson.concentus.OpusApplication;
 import io.github.jaredmdobson.concentus.OpusDecoder;
 import io.github.jaredmdobson.concentus.OpusEncoder;
 import okhttp3.MediaType;
+import okhttp3.MultipartBody;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -36,6 +38,7 @@ final class XiaozhiClient {
 
     private static final String TAG = "HachimoXiaozhi";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
+    private static final MediaType JPEG = MediaType.parse("image/jpeg");
     static final String DEFAULT_OTA_URL = "";
     private static final String BOARD_TYPE = "bread-compact-wifi";
     private static final String APP_VERSION = "2.5.4";
@@ -66,6 +69,23 @@ final class XiaozhiClient {
         void onDone();
 
         void onError(String message);
+    }
+
+    interface PhotoProvider {
+        byte[] capturePhotoSync();
+    }
+
+    private static volatile PhotoProvider photoProvider;
+    private static volatile String legacyVisionUrl = "";
+    private static volatile String legacyVisionToken = "";
+    private static volatile boolean mcpVisionActive = false;
+
+    static void setPhotoProvider(PhotoProvider p) {
+        photoProvider = p;
+    }
+
+    static boolean hasMcpVision() {
+        return mcpVisionActive || !legacyVisionUrl.isEmpty();
     }
 
     private static final Handler ui = new Handler(Looper.getMainLooper());
@@ -373,7 +393,7 @@ final class XiaozhiClient {
                 openTurnSocket(app, url, tok, pcm16k, textInput, l);
             } catch (Exception e) {
                 Log.w(TAG, "xiaozhi turn init failed", e);
-                ui.post(() -> l.onError("小智连接失败：" + e.getMessage()));
+                ui.post(() -> l.onError("连接失败：" + e.getMessage()));
             }
         }, "xz-turn").start();
     }
@@ -405,7 +425,7 @@ final class XiaozhiClient {
             if (finished.compareAndSet(false, true)) {
                 WebSocket cur = activeWs.getAndSet(null);
                 if (cur != null) cur.cancel();
-                l.onError("小智响应超时");
+                l.onError("响应超时");
             }
         };
         ui.postDelayed(timeoutTask, 25000);
@@ -422,7 +442,7 @@ final class XiaozhiClient {
                     JSONObject hello = new JSONObject()
                             .put("type", "hello")
                             .put("version", 1)
-                            .put("features", new JSONObject().put("mcp", false))
+                            .put("features", new JSONObject().put("mcp", true).put("mcp_20260728", true))
                             .put("transport", "websocket")
                             .put("audio_params", audioParams);
                     ws.send(hello.toString());
@@ -431,7 +451,7 @@ final class XiaozhiClient {
                         ui.removeCallbacks(timeoutTask);
                         activeWs.compareAndSet(ws, null);
                         ws.cancel();
-                        ui.post(() -> l.onError("小智握手构造失败"));
+                        ui.post(() -> l.onError("握手构造失败"));
                     }
                 }
             }
@@ -527,11 +547,16 @@ final class XiaozhiClient {
                             ws.close(1000, "done");
                             ui.post(l::onDone);
                         }
+                    } else if ("mcp".equals(type)) {
+                        JSONObject payload = m.optJSONObject("payload");
+                        if (payload != null) {
+                            handleMcpRequest(app, ws, sessionIdRef.get(), mac, uuid, payload);
+                        }
                     } else if ("alert".equals(type)) {
                         String st = m.optString("status", "");
                         String msg = m.optString("message", "");
                         String errText = (st + " " + msg).trim();
-                        if (errText.isEmpty()) errText = "小智提示异常";
+                        if (errText.isEmpty()) errText = "服务提示异常";
                         if (errText.contains("激活") || errText.contains("绑定")) {
                             BridgeService.prefs(app).edit().putBoolean("xz_activated", false).apply();
                         }
@@ -589,7 +614,7 @@ final class XiaozhiClient {
                 if (code == 401 || code == 403) {
                     BridgeService.prefs(app).edit().putBoolean("xz_activated", false).apply();
                 }
-                ui.post(() -> l.onError(code > 0 ? "小智连接失败 (HTTP " + code + ")" : "小智连接失败"));
+                ui.post(() -> l.onError(code > 0 ? "连接失败 (HTTP " + code + ")" : "连接失败"));
             }
 
             @Override
@@ -600,10 +625,216 @@ final class XiaozhiClient {
                 if (audioStarted.get()) {
                     ui.post(l::onDone);
                 } else {
-                    ui.post(() -> l.onError("小智连接已关闭"));
+                    ui.post(() -> l.onError("连接已关闭"));
                 }
             }
         });
         activeWs.set(ws);
+    }
+
+    // ------------------------------------------------------------ MCP 相机视觉工具 (self.camera.take_photo)
+
+    private static void handleMcpRequest(Context app, WebSocket ws, String sid,
+                                         String mac, String uuid, JSONObject rpc) {
+        final Object id = rpc.opt("id");
+        final String method = rpc.optString("method", "");
+        if (id == null || id == JSONObject.NULL || method.isEmpty()) return;
+        final JSONObject params = rpc.optJSONObject("params");
+
+        new Thread(() -> {
+            try {
+                if ("server/discover".equals(method)) {
+                    mcpVisionActive = true;
+                    JSONObject result = new JSONObject()
+                            .put("resultType", "complete")
+                            .put("supportedVersions", new JSONArray().put("2026-07-28").put("2024-11-05"))
+                            .put("capabilities", new JSONObject()
+                                    .put("tools", new JSONObject())
+                                    .put("extensions", new JSONObject()
+                                            .put("me.xiaozhi/vision", new JSONObject())))
+                            .put("ttlMs", 60000)
+                            .put("cacheScope", "private")
+                            .put("_meta", new JSONObject()
+                                    .put("io.modelcontextprotocol/serverInfo", new JSONObject()
+                                            .put("name", BOARD_TYPE)
+                                            .put("version", APP_VERSION)));
+                    sendMcpResult(ws, sid, id, result);
+                } else if ("initialize".equals(method)) {
+                    if (params != null) {
+                        JSONObject caps = params.optJSONObject("capabilities");
+                        JSONObject vis = caps == null ? null : caps.optJSONObject("vision");
+                        if (vis != null) {
+                            legacyVisionUrl = vis.optString("url", "").trim();
+                            legacyVisionToken = vis.optString("token", "").trim();
+                            if (!legacyVisionUrl.isEmpty()) mcpVisionActive = true;
+                        }
+                    }
+                    JSONObject result = new JSONObject()
+                            .put("protocolVersion", "2024-11-05")
+                            .put("capabilities", new JSONObject().put("tools", new JSONObject()))
+                            .put("serverInfo", new JSONObject()
+                                    .put("name", BOARD_TYPE)
+                                    .put("version", APP_VERSION));
+                    sendMcpResult(ws, sid, id, result);
+                } else if ("tools/list".equals(method)) {
+                    JSONObject questionSchema = new JSONObject()
+                            .put("type", "string")
+                            .put("description", "The question about the photo.");
+                    JSONObject takePhoto = new JSONObject()
+                            .put("name", "self.camera.take_photo")
+                            .put("description", "Take a photo with the phone camera and explain what is in front of the user.")
+                            .put("inputSchema", new JSONObject()
+                                    .put("type", "object")
+                                    .put("properties", new JSONObject().put("question", questionSchema))
+                                    .put("required", new JSONArray().put("question")));
+                    JSONObject result = new JSONObject()
+                            .put("tools", new JSONArray().put(takePhoto));
+                    if (params != null && params.optJSONObject("_meta") != null) {
+                        result.put("resultType", "complete")
+                                .put("ttlMs", 60000)
+                                .put("cacheScope", "private");
+                    }
+                    sendMcpResult(ws, sid, id, result);
+                } else if ("tools/call".equals(method)) {
+                    String name = params == null ? "" : params.optString("name", "");
+                    if (!"self.camera.take_photo".equals(name)) {
+                        sendMcpError(ws, sid, id, -32601, "Unknown tool: " + name);
+                        return;
+                    }
+                    JSONObject args = params.optJSONObject("arguments");
+                    String question = args == null ? "" : args.optString("question", "").trim();
+                    if (question.isEmpty()) question = "描述一下画面里有什么";
+
+                    String vUrl = legacyVisionUrl;
+                    String vTok = legacyVisionToken;
+                    JSONObject meta = params.optJSONObject("_meta");
+                    if (meta != null) {
+                        JSONObject cc = meta.optJSONObject("io.modelcontextprotocol/clientCapabilities");
+                        JSONObject exts = cc == null ? null : cc.optJSONObject("extensions");
+                        JSONObject vis = exts == null ? null : exts.optJSONObject("me.xiaozhi/vision");
+                        if (vis != null && !vis.optString("url", "").trim().isEmpty()) {
+                            vUrl = vis.optString("url", "").trim();
+                            vTok = vis.optString("token", "").trim();
+                        }
+                    }
+
+                    PhotoProvider pp = photoProvider;
+                    byte[] jpeg = pp == null ? null : pp.capturePhotoSync();
+                    if (jpeg == null || jpeg.length == 0) {
+                        sendMcpToolText(ws, sid, id, "手机摄像头暂时打不开或未授权", true);
+                        return;
+                    }
+
+                    String answer;
+                    boolean isErr = false;
+                    if (!vUrl.isEmpty()) {
+                        answer = uploadVisionExplain(vUrl, vTok, mac, uuid, question, jpeg);
+                    } else if (PhoneVoice.vlmReady(app)) {
+                        answer = describeLocallySync(app, jpeg, question);
+                    } else {
+                        answer = "服务端未下发视觉分析地址，且未配置本地看图 Key";
+                        isErr = true;
+                    }
+                    sendMcpToolText(ws, sid, id, answer, isErr);
+                } else {
+                    sendMcpError(ws, sid, id, -32601, "Method not found: " + method);
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "mcp handle err method=" + method, e);
+                try {
+                    sendMcpError(ws, sid, id, -32603, String.valueOf(e.getMessage()));
+                } catch (Exception ignored) {
+                }
+            }
+        }, "xz-mcp").start();
+    }
+
+    private static String uploadVisionExplain(String url, String token, String mac, String uuid,
+                                              String question, byte[] jpeg) throws Exception {
+        // xiaozhi-esp32-server 的 /mcp/vision/explain 按顺序读取 question 与 file 两个 multipart 字段
+        MultipartBody body = new MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("question", question)
+                .addFormDataPart("file", "camera.jpg", RequestBody.create(JPEG, jpeg))
+                .build();
+        Request.Builder rb = new Request.Builder()
+                .url(url)
+                .header("Device-Id", mac)
+                .header("Client-Id", uuid)
+                .post(body);
+        if (token != null && !token.isEmpty()) {
+            rb.header("Authorization", "Bearer " + token);
+        }
+        try (Response resp = HTTP.newBuilder().readTimeout(30, TimeUnit.SECONDS).build()
+                .newCall(rb.build()).execute()) {
+            String raw = resp.body() == null ? "" : resp.body().string();
+            if (!resp.isSuccessful()) {
+                throw new Exception("HTTP " + resp.code() + " " + raw);
+            }
+            try {
+                JSONObject o = new JSONObject(raw);
+                String text = o.optString("response", "");
+                if (text.isEmpty()) text = o.optString("text", "");
+                if (text.isEmpty()) text = o.optString("result", "");
+                if (!text.isEmpty()) return text;
+                if (!o.optBoolean("success", true)) {
+                    throw new Exception(o.optString("message", "视觉解析失败"));
+                }
+            } catch (org.json.JSONException ignored) {
+            }
+            return raw.isEmpty() ? "看图完成" : raw;
+        }
+    }
+
+    private static String describeLocallySync(Context app, byte[] jpeg, String question) throws Exception {
+        final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        final AtomicReference<String> okRef = new AtomicReference<>();
+        final AtomicReference<String> errRef = new AtomicReference<>();
+        PhoneVoice.describeImage(app, jpeg, question, new PhoneVoice.TextCallback() {
+            @Override
+            public void onText(String text) {
+                okRef.set(text);
+                latch.countDown();
+            }
+
+            @Override
+            public void onError(String message) {
+                errRef.set(message);
+                latch.countDown();
+            }
+        });
+        latch.await(20, TimeUnit.SECONDS);
+        if (okRef.get() != null) return okRef.get();
+        throw new Exception(errRef.get() != null ? errRef.get() : "视觉超时");
+    }
+
+    private static void sendMcpToolText(WebSocket ws, String sid, Object id, String text, boolean isError)
+            throws Exception {
+        JSONObject result = new JSONObject()
+                .put("resultType", "complete")
+                .put("content", new JSONArray().put(new JSONObject().put("type", "text").put("text", text)))
+                .put("isError", isError);
+        sendMcpResult(ws, sid, id, result);
+    }
+
+    private static void sendMcpResult(WebSocket ws, String sid, Object id, JSONObject result) throws Exception {
+        JSONObject rpc = new JSONObject()
+                .put("jsonrpc", "2.0")
+                .put("id", id)
+                .put("result", result);
+        JSONObject msg = new JSONObject().put("type", "mcp").put("payload", rpc);
+        if (sid != null && !sid.isEmpty()) msg.put("session_id", sid);
+        ws.send(msg.toString());
+    }
+
+    private static void sendMcpError(WebSocket ws, String sid, Object id, int code, String message)
+            throws Exception {
+        JSONObject rpc = new JSONObject()
+                .put("jsonrpc", "2.0")
+                .put("id", id)
+                .put("error", new JSONObject().put("code", code).put("message", message));
+        JSONObject msg = new JSONObject().put("type", "mcp").put("payload", rpc);
+        if (sid != null && !sid.isEmpty()) msg.put("session_id", sid);
+        ws.send(msg.toString());
     }
 }

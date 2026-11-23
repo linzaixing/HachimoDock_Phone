@@ -747,6 +747,7 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
 
     @Override
     protected void onDestroy() {
+        XiaozhiClient.setPhotoProvider(null);
         AppState.get().remove(this);
         ChatBus.remove(this);
         VoiceBus.remove(this);
@@ -1465,11 +1466,11 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
     private String wakeHint() {
         if (!AppState.get().snapshot().connected && XiaozhiClient.enabled(this)) {
             if (XiaozhiClient.otaUrl(this).isEmpty()) {
-                return "小智模式：请先在设置页填写小智 OTA 地址";
+                return "请先在设置页填写服务地址";
             }
             return XiaozhiClient.activated(this)
-                    ? "小智模式已就绪，叫「哈基米」就能聊"
-                    : "小智模式待激活：请在设置页点「获取激活码」";
+                    ? "准备就绪，叫「哈基米」就能聊"
+                    : "设备未绑定：请在设置页点「获取激活码」";
         }
         boolean kws = KwsWake.ready();
         int mode = BridgeService.wakeMode(this);
@@ -2619,25 +2620,65 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
         pendingWrites.set(0);
     }
 
-    /** 小智云单轮语音/文本交互（Activation-Version: 1 + Opus 双向流式） */
+    /** 为 MCP 相机工具同步拍一帧 JPEG（若相机未开则按需临时拉起，取帧后自动关掉） */
+    private byte[] captureFrameForMcpSync() {
+        VisionTracker cur = vision;
+        byte[] jpeg = cur == null ? null : cur.latestJpeg();
+        if (jpeg != null && jpeg.length > 0) return jpeg;
+        if (!resumed || checkSelfPermission(android.Manifest.permission.CAMERA)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return null;
+        }
+        final java.util.concurrent.CountDownLatch startLatch = new java.util.concurrent.CountDownLatch(1);
+        final boolean[] openedOnDemand = {false};
+        handler.post(() -> {
+            if (vision == null) {
+                visionOnDemand = true;
+                openedOnDemand[0] = true;
+                startVision();
+            }
+            startLatch.countDown();
+        });
+        try {
+            startLatch.await(1500, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ignored) {
+        }
+        for (int i = 0; i < 35; i++) {
+            VisionTracker v = vision;
+            jpeg = v == null ? null : v.latestJpeg();
+            if (jpeg != null && jpeg.length > 0) break;
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                break;
+            }
+        }
+        if (openedOnDemand[0]) {
+            handler.post(this::finishSnapshotVision);
+        }
+        return jpeg;
+    }
+
+    /** 端到端语音/文本交互（统一口吻，支持 MCP 相机调用与本地 VLM 兜底） */
     private void startXiaozhiTurn(byte[] pcm, String textInput) {
+        XiaozhiClient.setPhotoProvider(this::captureFrameForMcpSync);
         stopMicForPlayback();
         stopReply();
         final long seq = ttsSeq;
         chatWaiting = true;
         chatSentAt = System.currentTimeMillis();
         streamFrames = 0;
-        bubble.setText(textInput == null ? "小智思考中…" : ("「" + textInput + "」"));
+        bubble.setText(textInput == null ? "识别中…" : ("「" + textInput + "」"));
         hint.setVisibility(TextView.VISIBLE);
-        hint.setText(chatMode ? "说「退出」结束" : "小智响应中…");
+        hint.setText(textInput == null ? (chatMode ? "说「退出」结束" : "识别中…") : "想一想…");
         XiaozhiClient.TurnListener tl = new XiaozhiClient.TurnListener() {
             @Override
             public void onNeedActivation(String code) {
                 if (seq != ttsSeq || !resumed) return;
                 chatWaiting = false;
-                bubble.setText("小智激活码：" + code);
+                bubble.setText("激活码：" + code);
                 hint.setVisibility(TextView.VISIBLE);
-                hint.setText("请在小智控制台绑定设备");
+                hint.setText("请在控制台绑定设备");
                 scheduleChatRestart(4000);
             }
 
@@ -2649,13 +2690,26 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
                     exitChat();
                     return;
                 }
+                if (PhoneVoice.vlmReady(DeviceActivity.this)
+                        && hasDirectVisualIntent(text)
+                        && !XiaozhiClient.hasMcpVision()) {
+                    XiaozhiClient.abort();
+                    ttsSeq++;
+                    chatWaiting = false;
+                    bubble.setText("「" + text + "」");
+                    askVision(text);
+                    return;
+                }
                 bubble.setText("「" + text + "」");
+                hint.setVisibility(TextView.VISIBLE);
+                hint.setText("想一想…");
             }
 
             @Override
             public void onReplyText(String text) {
                 if (seq != ttsSeq || !resumed) return;
                 hint.setVisibility(chatMode ? TextView.VISIBLE : TextView.GONE);
+                if (chatMode) hint.setText("说「退出」结束");
                 bubble.setText(shortReply(text));
             }
 
