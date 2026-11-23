@@ -168,6 +168,8 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
     private boolean pendingMicForAgent;
     private long chatId;
     private long chatSentAt;
+    /** 小智模式下这一轮是告别回合：播完（或失败）后退出对话 */
+    private boolean farewellTurn;
     private long voiceSentAt;
     private Runnable chatIdleTask;
     private Runnable chatRestartTask;
@@ -212,9 +214,9 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
                 handler.postDelayed(this, 2000);
                 return;
             }
-            if (chatWaiting && now - chatSentAt > 45000
-                    && !(chatTrack != null && now - streamLastChunkAt < 10000)) {
-                Log.w(TAG, "chat watchdog: 45s 没等到回复，重试");
+            if (chatWaiting && now - chatSentAt > 70000
+                    && !(chatTrack != null && now - streamLastChunkAt < 15000)) {
+                Log.w(TAG, "chat watchdog: 70s 没等到回复，重试");
                 chatId++;
                 stopReply();
                 chatWaiting = false;
@@ -1066,12 +1068,10 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             return;
         }
         agentVoice = forAgent;
-        // 对话模式下 leadSilenceMs 设为 16s（略长于 15s 空闲退出的阈值），避免每隔 6 秒重启麦克风出现短暂「聋窗」
-        // 最多录 15s / 30s：环境吵时 VAD 可能一直判不出「说完」，不设上限会录满 45s，
-        // 上传 1.4MB 音频把 WS 撑断，表现就是「问了没反应」
-        // 说完 0.9 秒没声音就收尾：比 1.4 秒更快给出回复，又不会把句中停顿切断
-        recorder.configure(forAgent ? 2000 : 900, forAgent ? 8000 : 16000,
-                forAgent ? 30000 : 15000);
+        // 对话模式下 leadSilenceMs 设得比最长录音略小，没人说话时尽快收尾重开，
+        // 避免界面长时间停在「我在听…」；说完 0.75 秒没声音就收尾，比原来 0.9 秒更快给出回复
+        recorder.configure(forAgent ? 2000 : 750, forAgent ? 8000 : 10000,
+                forAgent ? 30000 : 12000);
         startPcVoice();
     }
 
@@ -1106,6 +1106,11 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
         hint.setText(chatMode ? "说「退出」结束" : "说完停顿一下就结束");
         final long vId = ++voiceId;
         boolean ok = recorder.start(new VoiceRecorder.Listener() {
+            @Override
+            public void onSpeechStart() {
+                if (voiceBusy && !awaitingText) bubble.setText("在听你说…");
+            }
+
             @Override
             public void onProbe(byte[] pcm) {
                 // 省流模式默认关闭预识别；开启时才在停顿 0.3s 提前送去识别
@@ -1796,18 +1801,18 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
                 || c == '梅';
     }
 
-    /** 语音回复只留第一句、最多 40 字，避免 TTS 念一长串 */
+    /** 语音回复最多 60 字（约两句），避免 TTS 念一长串；超过时截到最近的句号 */
     private static String shortReply(String text) {
         if (text == null) return "";
         String t = text.trim().replaceAll("\\s+", " ");
-        if (t.length() <= 40) return t;
-        for (int i = 0; i < t.length() && i < 45; i++) {
+        if (t.length() <= 60) return t;
+        for (int i = 0; i < t.length() && i < 70; i++) {
             char c = t.charAt(i);
             if (c == '。' || c == '！' || c == '？' || c == '!' || c == '?') {
                 return t.substring(0, i + 1);
             }
         }
-        return t.substring(0, 40) + "…";
+        return t.substring(0, 60) + "…";
     }
 
     /**
@@ -2149,6 +2154,12 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
     }
 
     private void speakGreeting(String greet) {
+        // 小智模式：问候走小智文本回合，用服务端同一音色回应，避免第一声和后续回答换声
+        if (XiaozhiClient.enabled(this)) {
+            Log.i(TAG, "xiaozhi greeting turn");
+            startXiaozhiTurn(null, "你好呀");
+            return;
+        }
         // 本机离线音色 / OpenAI TTS 模式时直接由手机发声，避免与对话回复音色分裂
         String mode = PhoneVoice.ttsMode(this);
         if (!PhoneVoice.TTS_MODE_LOCAL.equals(mode)
@@ -2258,6 +2269,13 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
         if (tryRememberFace(text)) return;
         if (isExitPhrase(text)) {
             Log.i(TAG, "exit phrase: " + text);
+            if (XiaozhiClient.enabled(this)) {
+                // 小智模式：让它用同一声线回一句告别，播完再真正退出
+                farewellTurn = true;
+                bubble.setText("再见");
+                startXiaozhiTurn(null, "再见");
+                return;
+            }
             exitChat();
             // 离开前先打声招呼
             String bye = FAREWELLS[RND.nextInt(FAREWELLS.length)];
@@ -2378,6 +2396,11 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             }
             Log.i(TAG, "对话空闲 30s，退出会话");
             exitChat();
+            if (XiaozhiClient.enabled(DeviceActivity.this)) {
+                // 小智模式：自动退出也让它用同一音色说一句
+                startXiaozhiTurn(null, "我先去休息啦");
+                return;
+            }
             // 自动退出用「没人理我」的说法，别和用户主动赶它走混在一起
             String bye = IDLE_FAREWELLS[RND.nextInt(IDLE_FAREWELLS.length)];
             bubble.setText(bye);
@@ -2686,6 +2709,11 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             public void onStt(String text) {
                 if (seq != ttsSeq || !resumed) return;
                 if (isExitPhrase(text)) {
+                    if (XiaozhiClient.enabled(DeviceActivity.this)) {
+                        // 服务端已经在生成这一轮回覆，让它说完告别再退出
+                        farewellTurn = true;
+                        return;
+                    }
                     XiaozhiClient.abort();
                     exitChat();
                     return;
@@ -2739,6 +2767,11 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             @Override
             public void onError(String message) {
                 if (seq != ttsSeq || !resumed) return;
+                if (farewellTurn) {
+                    farewellTurn = false;
+                    exitChat();
+                    return;
+                }
                 chatWaiting = false;
                 releaseAudioTrack();
                 bubble.setText(message);
@@ -2995,6 +3028,12 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
 
     /** 说完/播完继续听下一句 */
     private void onReplySpoken() {
+        // 小智模式下的告别回合：音频播完再退出会话
+        if (farewellTurn) {
+            farewellTurn = false;
+            exitChat();
+            return;
+        }
         if (chatMode) {
             armChatIdle();              // 从「播完」开始算空闲时间
             scheduleChatRestart(50);

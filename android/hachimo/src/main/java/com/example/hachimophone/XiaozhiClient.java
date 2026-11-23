@@ -125,7 +125,8 @@ final class XiaozhiClient {
     static synchronized String deviceId(Context c) {
         String mac = BridgeService.prefs(c).getString("xz_device_id", "");
         if (!mac.isEmpty()) return mac;
-        mac = randomMac();
+        // 用 Android ID + 机型派生，重装/清数据后仍然相同，避免每次更新都换激活码
+        mac = deriveMac(hardwareSeed(c) + "|mac");
         BridgeService.prefs(c).edit().putString("xz_device_id", mac).apply();
         return mac;
     }
@@ -133,9 +134,50 @@ final class XiaozhiClient {
     static synchronized String clientId(Context c) {
         String id = BridgeService.prefs(c).getString("xz_client_id", "");
         if (!id.isEmpty()) return id;
-        id = UUID.randomUUID().toString();
+        id = deriveUuid(hardwareSeed(c) + "|client");
         BridgeService.prefs(c).edit().putString("xz_client_id", id).apply();
         return id;
+    }
+
+    /** 同一台手机固定不变的种子：Android ID 在同签名的应用里不会变 */
+    private static String hardwareSeed(Context c) {
+        String aid = "";
+        try {
+            aid = android.provider.Settings.Secure.getString(
+                    c.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+        } catch (Throwable ignored) {
+        }
+        if (aid == null) aid = "";
+        return aid + "|" + android.os.Build.MANUFACTURER + "|" + android.os.Build.MODEL;
+    }
+
+    private static String deriveMac(String seed) {
+        try {
+            byte[] d = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(seed.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            d[0] = (byte) ((d[0] & 0xFC) | 0x02);
+            return String.format(Locale.US, "%02x:%02x:%02x:%02x:%02x:%02x",
+                    d[0] & 0xff, d[1] & 0xff, d[2] & 0xff, d[3] & 0xff, d[4] & 0xff, d[5] & 0xff);
+        } catch (Exception e) {
+            return randomMac();
+        }
+    }
+
+    private static String deriveUuid(String seed) {
+        try {
+            byte[] b = java.security.MessageDigest.getInstance("MD5")
+                    .digest(seed.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            b[6] = (byte) ((b[6] & 0x0F) | 0x30);
+            b[8] = (byte) ((b[8] & 0x3F) | 0x80);
+            return String.format(Locale.US,
+                    "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+                    b[0] & 0xff, b[1] & 0xff, b[2] & 0xff, b[3] & 0xff,
+                    b[4] & 0xff, b[5] & 0xff, b[6] & 0xff, b[7] & 0xff,
+                    b[8] & 0xff, b[9] & 0xff, b[10] & 0xff, b[11] & 0xff,
+                    b[12] & 0xff, b[13] & 0xff, b[14] & 0xff, b[15] & 0xff);
+        } catch (Exception e) {
+            return UUID.randomUUID().toString();
+        }
     }
 
     static synchronized void resetIdentity(Context c) {
@@ -145,6 +187,25 @@ final class XiaozhiClient {
         BridgeService.prefs(c).edit()
                 .putString("xz_device_id", mac)
                 .putString("xz_client_id", uuid)
+                .putBoolean("xz_activated", false)
+                .putString("xz_code", "")
+                .putString("xz_ws_url", "")
+                .putString("xz_ws_token", "")
+                .apply();
+    }
+
+    /** 当前身份是不是这台设备默认派生出来的 */
+    static boolean isDefaultIdentity(Context c) {
+        String cur = BridgeService.prefs(c).getString("xz_device_id", "");
+        return !cur.isEmpty() && cur.equals(deriveMac(hardwareSeed(c) + "|mac"));
+    }
+
+    /** 恢复到这台设备的默认派生身份（身份变了需重新绑定激活码） */
+    static synchronized void resetToDefaultIdentity(Context c) {
+        stopActivatePolling();
+        BridgeService.prefs(c).edit()
+                .putString("xz_device_id", deriveMac(hardwareSeed(c) + "|mac"))
+                .putString("xz_client_id", deriveUuid(hardwareSeed(c) + "|client"))
                 .putBoolean("xz_activated", false)
                 .putString("xz_code", "")
                 .putString("xz_ws_url", "")
@@ -408,6 +469,7 @@ final class XiaozhiClient {
         final AtomicReference<String> sessionIdRef = new AtomicReference<>("");
         final AtomicReference<OpusDecoder> decoderRef = new AtomicReference<>();
         final int[] downRate = {24000};
+        final long t0 = System.currentTimeMillis();
 
         OkHttpClient wsClient = HTTP.newBuilder()
                 .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -425,10 +487,23 @@ final class XiaozhiClient {
             if (finished.compareAndSet(false, true)) {
                 WebSocket cur = activeWs.getAndSet(null);
                 if (cur != null) cur.cancel();
+                Log.w(TAG, "xiaozhi turn timeout 60s audioStarted=" + audioStarted.get());
                 l.onError("响应超时");
             }
         };
-        ui.postDelayed(timeoutTask, 25000);
+        // 小智服务端要串行完成 ASR → LLM → TTS，25 秒容易在长回答时误判超时
+        ui.postDelayed(timeoutTask, 60000);
+
+        // 握手迟迟没有 hello 时不能一直挂在「识别中」，10 秒直接结束这一轮
+        final Runnable helloTimer = () -> {
+            if (!helloDone.get() && finished.compareAndSet(false, true)) {
+                WebSocket cur = activeWs.getAndSet(null);
+                if (cur != null) cur.cancel();
+                ui.removeCallbacks(timeoutTask);
+                Log.w(TAG, "xiaozhi hello timeout 10s");
+                ui.post(() -> l.onError("小智没响应，再说一次"));
+            }
+        };
 
         WebSocket ws = wsClient.newWebSocket(req, new WebSocketListener() {
             @Override
@@ -464,6 +539,7 @@ final class XiaozhiClient {
                     String type = m.optString("type", "");
                     if ("hello".equals(type)) {
                         if (!helloDone.compareAndSet(false, true)) return;
+                        ui.removeCallbacks(helloTimer);
                         String sid = m.optString("session_id", "");
                         sessionIdRef.set(sid);
                         JSONObject ap = m.optJSONObject("audio_params");
@@ -471,7 +547,8 @@ final class XiaozhiClient {
                         if (sr <= 0) sr = 24000;
                         downRate[0] = sr;
                         decoderRef.set(new OpusDecoder(sr, 1));
-                        Log.i(TAG, "xiaozhi hello ok sid=" + sid + " downRate=" + sr);
+                        Log.i(TAG, "xiaozhi hello ok sid=" + sid + " downRate=" + sr
+                                + " in " + (System.currentTimeMillis() - t0) + "ms");
 
                         new Thread(() -> {
                             try {
@@ -509,6 +586,13 @@ final class XiaozhiClient {
                                             break;
                                         }
                                         off += copy;
+                                        // 2 倍速推流：帧时长仍是 60ms，服务端按帧解码不受影响，
+                                        // 但 10 秒录音能 5 秒推完，少一半「识别中」等待
+                                        try {
+                                            Thread.sleep(FRAME_MS / 2);
+                                        } catch (InterruptedException ie) {
+                                            break;
+                                        }
                                     }
 
                                     if (!finished.get()) {
@@ -526,12 +610,14 @@ final class XiaozhiClient {
                     } else if ("stt".equals(type)) {
                         String stt = m.optString("text", "").trim();
                         if (!stt.isEmpty()) {
+                            Log.i(TAG, "xiaozhi stt in " + (System.currentTimeMillis() - t0) + "ms: " + stt);
                             ui.post(() -> l.onStt(stt));
                         }
                     } else if ("tts".equals(type)) {
                         String state = m.optString("state", "");
                         if ("start".equals(state)) {
                             if (audioStarted.compareAndSet(false, true)) {
+                                Log.i(TAG, "xiaozhi tts start in " + (System.currentTimeMillis() - t0) + "ms");
                                 final int sr = downRate[0];
                                 ui.post(() -> l.onAudioStart(sr));
                             }
@@ -603,6 +689,7 @@ final class XiaozhiClient {
             public void onFailure(WebSocket ws, Throwable t, Response response) {
                 if (!finished.compareAndSet(false, true)) return;
                 ui.removeCallbacks(timeoutTask);
+                ui.removeCallbacks(helloTimer);
                 activeWs.compareAndSet(ws, null);
                 int code = response == null ? 0 : response.code();
                 Log.w(TAG, "xiaozhi ws failed code=" + code + " audioStarted=" + audioStarted.get(), t);
@@ -621,6 +708,7 @@ final class XiaozhiClient {
             public void onClosed(WebSocket ws, int code, String reason) {
                 if (!finished.compareAndSet(false, true)) return;
                 ui.removeCallbacks(timeoutTask);
+                ui.removeCallbacks(helloTimer);
                 activeWs.compareAndSet(ws, null);
                 if (audioStarted.get()) {
                     ui.post(l::onDone);
@@ -630,6 +718,7 @@ final class XiaozhiClient {
             }
         });
         activeWs.set(ws);
+        ui.postDelayed(helloTimer, 10000);
     }
 
     // ------------------------------------------------------------ MCP 相机视觉工具 (self.camera.take_photo)

@@ -254,10 +254,19 @@ public final class MainActivity extends Activity implements AppState.Listener {
 
         TextView xzResetBtn = pillButton("换新设备码", BG_PILL, TEXT_PRIMARY);
         xzResetBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        final Runnable refreshResetBtn = () -> xzResetBtn.setText(
+                XiaozhiClient.isDefaultIdentity(this) ? "换新设备码" : "恢复默认设备码");
+        refreshResetBtn.run();
         xzResetBtn.setOnClickListener(v -> {
-            XiaozhiClient.resetIdentity(this);
+            if (XiaozhiClient.isDefaultIdentity(this)) {
+                XiaozhiClient.resetIdentity(this);
+                Toast.makeText(this, "已生成新虚拟 MAC/UUID，请重新获取激活码", Toast.LENGTH_SHORT).show();
+            } else {
+                XiaozhiClient.resetToDefaultIdentity(this);
+                Toast.makeText(this, "已恢复默认设备码，请重新获取激活码", Toast.LENGTH_SHORT).show();
+            }
+            refreshResetBtn.run();
             refreshXzStatus.run();
-            Toast.makeText(this, "已生成新虚拟 MAC/UUID", Toast.LENGTH_SHORT).show();
         });
         addWeight(xzBtnRow, xzResetBtn, 0.9f, 0);
         xiaozhiBox.addView(xzBtnRow);
@@ -456,7 +465,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
         TextView connect = pillButton("连接", 0xFF164E63, 0xFF67E8F9);
         connect.setOnClickListener(v -> {
             if (!BridgeService.setBridgeUrl(this, urlInput.getText().toString().trim())) {
-                Toast.makeText(this, "地址格式不对，应形如 ws://192.168.1.5:8765/ws", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "地址格式不对，应形如 ws://192.168.x.x:8765/ws", Toast.LENGTH_LONG).show();
                 return;
             }
             BridgeService.setBridgeToken(this, tokenInput.getText().toString().trim());

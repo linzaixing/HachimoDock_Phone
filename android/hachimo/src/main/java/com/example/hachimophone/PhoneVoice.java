@@ -42,9 +42,11 @@ final class PhoneVoice {
 
     /** 和 Bridge 侧一致的人设，保证连不连电脑说话口气一样 */
     private static final String PERSONA =
-            "你叫哈基米，是一只住在折叠屏外屏里的西高地小狗。说话简短、口语化、有点俏皮。"
-                    + "每次只回答一句话，最多 25 个字；不要解释、不要列点、不要客套。"
-                    + "不要使用 Markdown，不要提自己是 AI。";
+            "你叫哈基米，是一只住在折叠屏外屏里的西高地小狗。说话口语化、有点俏皮。"
+                    + "回答一般 35~50 字，通常两句。示例："
+                    + "用户问「今天天气怎么样？」就答「今天天气晴朗得很，阳光照在身上暖洋洋的，特别适合出门撒欢儿跑两圈！」；"
+                    + "用户问「你会什么呀？」就答「我会摇尾巴、汪汪叫，还能陪主人聊天解闷。要是主人心情不好，我就翻个肚皮逗你开心！」。"
+                    + "不要解释过程、不要列点、不要客套。不要使用 Markdown，不要提自己是 AI。";
     private static final int CHAT_TURNS = 5;
 
     interface TextCallback {
@@ -295,7 +297,7 @@ final class PhoneVoice {
     static final String FREE_SF_CHAT_MODEL = "Qwen/Qwen3-8B";
     /** 免费高音质语音：阿里云每月1日重置长期免费识别(10h/月) + Sambert语音(3万字/音色/月) */
     static final String FREE_MIX_ASR_MODEL = "paraformer-realtime-v2";
-    static final String FREE_MIX_TTS_MODEL = "sambert-zhimiao-emo-v1";
+    static final String FREE_MIX_TTS_MODEL = "sambert-zhiying-v1";
     static final String PAID_BASE = "https://api.deepseek.com/v1";
     static final String PAID_CHAT_MODEL = "deepseek-chat";
     /** 付费方案：一个阿里云 DashScope Key 跑通全部（极简低价 qwen3.7-flash 对话+看图 0.2/0.8元/M + 语音） */
@@ -424,7 +426,7 @@ final class PhoneVoice {
                 setChatModel(c, FREE_SF_CHAT_MODEL);
             }
             if (!dk.isEmpty() || sf.isEmpty()) {
-                // 阿里云每月1日重置长期免费 paraformer-realtime-v2 + sambert-zhimiao-emo-v1
+                // 阿里云每月1日重置长期免费 paraformer-realtime-v2 + sambert-zhiying-v1
                 setAsrKey(c, dk);
                 setAsrBase(c, dashBase(c));
                 setAsrModel(c, FREE_MIX_ASR_MODEL);
@@ -969,7 +971,7 @@ final class PhoneVoice {
                 String lowerBase = base.toLowerCase(java.util.Locale.US);
                 JSONObject body = new JSONObject();
                 body.put("temperature", 0.7);
-                body.put("max_tokens", 80);
+                body.put("max_tokens", 220);
                 JSONArray messages = new JSONArray();
                 String sysPrompt = (allowCamera ? (PERSONA + CAMERA_PROMPT_HINT) : PERSONA)
                         + "\n当前时间（手机本机时钟，问日期/星期/几点一律以此为准）：" + nowText();

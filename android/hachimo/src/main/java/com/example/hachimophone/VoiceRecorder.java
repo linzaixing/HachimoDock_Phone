@@ -25,6 +25,10 @@ final class VoiceRecorder {
          */
         void onProbe(byte[] pcm);
 
+        /** VAD 首次判定用户开口：给界面一个即时反馈，避免长时间停在「我在听…」 */
+        default void onSpeechStart() {
+        }
+
         /**
          * 录完的 PCM（16 bit 小端单声道，16000Hz），回调在主线程。
          *
@@ -169,6 +173,8 @@ final class VoiceRecorder {
         boolean probeSent = false;
         boolean probeUsable = false;
         double maxRms = 0;
+        /** 开口后的峰值：说完的静音门槛按它的 0.4 倍自适应，避免环境声一直顶在固定门槛上 */
+        double speechPeak = 0;
         /** 诊断用：第一个/最后一个超过门槛的块、最低电平，用来判断「说完多久才收尾」 */
         long firstLoudAt = 0;
         long lastLoudAt = 0;
@@ -222,6 +228,7 @@ final class VoiceRecorder {
             if (++chunks % 20 == 0) {
                 Log.i(TAG, "rec " + (now - startedAt) + "ms rms=" + Math.round(rms)
                         + " noise=" + Math.round(noise) + " thr=" + Math.round(threshold)
+                        + " qthr=" + Math.round(Math.max(threshold, speechPeak * 0.4))
                         + " voice=" + sawVoice);
             }
             if (!sawVoice && !loud) {
@@ -239,12 +246,16 @@ final class VoiceRecorder {
                     voiceSeen = true;
                     firstLoudAt = now;
                     lastLoudAt = now;
+                    speechPeak = Math.max(maxRms, rms);
                     for (byte[] p : pre) out.write(p, 0, p.length);
                     pre.clear();
                     silentSince = 0;
+                    Listener sl = listener;
+                    if (sl != null) ui.post(sl::onSpeechStart);
                 }
-            } else if (loud) {
+            } else if (rms > Math.max(threshold, speechPeak * 0.4)) {
                 lastLoudAt = now;
+                speechPeak = Math.max(speechPeak, rms);
                 out.write(chunk, 0, chunk.length);
                 // 快照之后又说话了：那份快照不能代表最终内容，作废
                 if (probeSent) probeUsable = false;
