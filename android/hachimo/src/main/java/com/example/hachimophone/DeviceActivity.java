@@ -1464,6 +1464,9 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
 
     private String wakeHint() {
         if (!AppState.get().snapshot().connected && XiaozhiClient.enabled(this)) {
+            if (XiaozhiClient.otaUrl(this).isEmpty()) {
+                return "小智模式：请先在设置页填写小智 OTA 地址";
+            }
             return XiaozhiClient.activated(this)
                     ? "小智模式已就绪，叫「哈基米」就能聊"
                     : "小智模式待激活：请在设置页点「获取激活码」";
@@ -1527,7 +1530,7 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
         // 走小智云且无电脑连接时：仅认端侧离线 KWS「哈基米」或点击屏幕唤醒，避免闲聊触发小智回复
         if (!AppState.get().snapshot().connected && XiaozhiClient.enabled(this)) {
             mode = BridgeService.WAKE_MODE_STRICT;
-        } else if ((PhoneVoice.planPaid(this) || PhoneVoice.asrBase(this).contains("dashscope"))
+        } else if ((PhoneVoice.planPaid(this) || PhoneVoice.isDashUrl(PhoneVoice.asrBase(this)))
                 && mode == BridgeService.WAKE_MODE_ASR) {
             // 走阿里云识别（付费或免费 paraformer 10h/月）时均走智能分级防止长闲聊白耗额度
             mode = BridgeService.WAKE_MODE_SMART;
@@ -2634,7 +2637,7 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
                 chatWaiting = false;
                 bubble.setText("小智激活码：" + code);
                 hint.setVisibility(TextView.VISIBLE);
-                hint.setText("请前往 xiaozhi.me 绑定设备");
+                hint.setText("请在小智控制台绑定设备");
                 scheduleChatRestart(4000);
             }
 

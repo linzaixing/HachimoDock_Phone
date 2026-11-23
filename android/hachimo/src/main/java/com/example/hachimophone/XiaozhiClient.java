@@ -30,13 +30,13 @@ import okio.ByteString;
  * 小智（xiaozhi-esp32）实验性客户端接入：
  *   - 伪造本地管理单播 MAC（02:xx:xx:xx:xx:xx）与 UUID v4，走 Activation-Version: 1 激活流程；
  *   - 仅依赖纯 Java Concentus 做 16kHz 上行 / 24kHz 下行 Opus 帧编解码，零原生 .so 开销；
- *   - 通过 WebSocket 对接 wss://api.tenclass.net/xiaozhi/v1/（或自建 xiaozhi-esp32-server）。
+ *   - 通过 WebSocket 对接兼容小智协议的自建或授权服务端（如 xiaozhi-esp32-server）。
  */
 final class XiaozhiClient {
 
     private static final String TAG = "HachimoXiaozhi";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
-    static final String DEFAULT_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/";
+    static final String DEFAULT_OTA_URL = "";
     private static final String BOARD_TYPE = "bread-compact-wifi";
     private static final String APP_VERSION = "2.5.4";
     private static final int IN_RATE = 16000;
@@ -200,6 +200,12 @@ final class XiaozhiClient {
 
     private static OtaResult queryOtaSync(Context app) throws Exception {
         String url = otaUrl(app);
+        if (url.isEmpty()) {
+            throw new Exception("请先填写小智 OTA 地址");
+        }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            throw new Exception("OTA 地址需以 http:// 或 https:// 开头");
+        }
         String mac = deviceId(app);
         String uuid = clientId(app);
         JSONObject appObj = new JSONObject()

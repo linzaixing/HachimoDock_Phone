@@ -118,7 +118,7 @@ public final class BridgeService extends Service {
         }
         if (sp.getBoolean("kws_strict", false)) return WAKE_MODE_STRICT;
         // 走阿里云识别（含免费 paraformer 10h/月）或付费方案默认智能分级省额度；纯免费无限次识别走全量兜底
-        return (PhoneVoice.planPaid(c) || PhoneVoice.asrBase(c).contains("dashscope"))
+        return (PhoneVoice.planPaid(c) || PhoneVoice.isDashUrl(PhoneVoice.asrBase(c)))
                 ? WAKE_MODE_SMART : WAKE_MODE_ASR;
     }
 

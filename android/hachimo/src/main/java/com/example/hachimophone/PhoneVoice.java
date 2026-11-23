@@ -68,17 +68,29 @@ final class PhoneVoice {
 
     // ------------------------------------------------------------ 配置
 
+    private static String cleanKey(String v) {
+        if (v == null) return "";
+        String s = v.trim();
+        if (s.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            s = s.substring(7).trim();
+        }
+        if ((s.startsWith("\"") && s.endsWith("\"")) || (s.startsWith("'") && s.endsWith("'"))) {
+            if (s.length() >= 2) s = s.substring(1, s.length() - 1).trim();
+        }
+        return s.replaceAll("\\s+", "");
+    }
+
     static String asrKey(Context c) {
-        return BridgeService.prefs(c).getString("asr_key", "");
+        return cleanKey(BridgeService.prefs(c).getString("asr_key", ""));
     }
 
     static void setAsrKey(Context c, String v) {
-        BridgeService.prefs(c).edit().putString("asr_key", v == null ? "" : v.trim()).apply();
+        BridgeService.prefs(c).edit().putString("asr_key", cleanKey(v)).apply();
     }
 
     static String asrBase(Context c) {
         String v = BridgeService.prefs(c).getString("asr_base", "");
-        return v == null || v.trim().isEmpty() ? DASH_BASE : trimSlash(v);
+        return v == null || v.trim().isEmpty() ? dashBase(c) : trimSlash(v);
     }
 
     static void setAsrBase(Context c, String v) {
@@ -95,11 +107,11 @@ final class PhoneVoice {
     }
 
     static String chatKey(Context c) {
-        return BridgeService.prefs(c).getString("chat_key", "");
+        return cleanKey(BridgeService.prefs(c).getString("chat_key", ""));
     }
 
     static void setChatKey(Context c, String v) {
-        BridgeService.prefs(c).edit().putString("chat_key", v == null ? "" : v.trim()).apply();
+        BridgeService.prefs(c).edit().putString("chat_key", cleanKey(v)).apply();
     }
 
     static String chatBase(Context c) {
@@ -119,10 +131,10 @@ final class PhoneVoice {
         if ("glm-4.7-flash".equalsIgnoreCase(m) && chatBase(c).contains("bigmodel")) {
             return FREE_CHAT_MODEL;
         }
-        if ("deepseek-v3".equalsIgnoreCase(m) && chatBase(c).contains("dashscope")) {
+        if ("deepseek-v3".equalsIgnoreCase(m) && isDashUrl(chatBase(c))) {
             return DASH_CHAT_MODEL;
         }
-        if ("deepseek-v4.1-flash-1017".equalsIgnoreCase(m) && chatBase(c).contains("dashscope")) {
+        if ("deepseek-v4.1-flash-1017".equalsIgnoreCase(m) && isDashUrl(chatBase(c))) {
             return DASH_CHAT_MODEL;
         }
         return m;
@@ -191,14 +203,14 @@ final class PhoneVoice {
     // ------------------------------------------------------------ 智谱免费视觉模型
 
     static String zhipuKey(Context c) {
-        String v = BridgeService.prefs(c).getString("zhipu_key", "");
+        String v = cleanKey(BridgeService.prefs(c).getString("zhipu_key", ""));
         if (!v.isEmpty()) return v;
         if (chatBase(c).contains("bigmodel.cn")) return chatKey(c);
         return "";
     }
 
     static void setZhipuKey(Context c, String v) {
-        BridgeService.prefs(c).edit().putString("zhipu_key", v == null ? "" : v.trim()).apply();
+        BridgeService.prefs(c).edit().putString("zhipu_key", cleanKey(v)).apply();
     }
 
     static String zhipuBase(Context c) {
@@ -218,11 +230,50 @@ final class PhoneVoice {
         return !zhipuKey(c).isEmpty() || !dashVlmKey(c).isEmpty();
     }
 
+    static boolean isDashUrl(String url) {
+        if (url == null) return false;
+        String u = url.toLowerCase(java.util.Locale.US);
+        return u.contains("dashscope") || u.contains("maas.aliyuncs.com");
+    }
+
+    static String dashWorkspace(Context c) {
+        return BridgeService.prefs(c).getString("dashscope_ws", "");
+    }
+
+    static void setDashWorkspace(Context c, String v) {
+        String s = v == null ? "" : v.trim();
+        if (s.startsWith("https://")) s = s.substring(8);
+        else if (s.startsWith("http://")) s = s.substring(7);
+        else if (s.startsWith("wss://")) s = s.substring(6);
+        int slash = s.indexOf('/');
+        if (slash >= 0) s = s.substring(0, slash);
+        BridgeService.prefs(c).edit().putString("dashscope_ws", s.trim()).apply();
+    }
+
+    static String dashHost(Context c) {
+        String ws = dashWorkspace(c);
+        if (ws.isEmpty()) return "dashscope.aliyuncs.com";
+        if (ws.contains(".")) return ws;
+        return ws + ".cn-beijing.maas.aliyuncs.com";
+    }
+
+    static String dashBase(Context c) {
+        return "https://" + dashHost(c) + "/compatible-mode/v1";
+    }
+
+    static String dashWsUrl(Context c) {
+        return "wss://" + dashHost(c) + "/api-ws/v1/inference";
+    }
+
+    static String dashTtsUrl(Context c) {
+        return "https://" + dashHost(c) + "/api/v1/services/aigc/multimodal-generation/generation";
+    }
+
     private static String dashVlmKey(Context c) {
         if (!planPaid(c)) return "";
         String dk = dashKey(c);
         if (!dk.isEmpty()) return dk;
-        if (!asrKey(c).isEmpty() && asrBase(c).contains("dashscope")) return asrKey(c);
+        if (!asrKey(c).isEmpty() && isDashUrl(asrBase(c))) return asrKey(c);
         return "";
     }
 
@@ -230,8 +281,8 @@ final class PhoneVoice {
     private static String dashAuthKey(Context c) {
         String dk = dashKey(c);
         if (!dk.isEmpty()) return dk;
-        if (asrBase(c).contains("dashscope") && !asrKey(c).isEmpty()) return asrKey(c);
-        if (chatBase(c).contains("dashscope") && !chatKey(c).isEmpty()) return chatKey(c);
+        if (isDashUrl(asrBase(c)) && !asrKey(c).isEmpty()) return asrKey(c);
+        if (isDashUrl(chatBase(c)) && !chatKey(c).isEmpty()) return chatKey(c);
         return "";
     }
 
@@ -269,14 +320,14 @@ final class PhoneVoice {
     }
 
     static String dashKey(Context c) {
-        String v = BridgeService.prefs(c).getString("dashscope_key", "");
+        String v = cleanKey(BridgeService.prefs(c).getString("dashscope_key", ""));
         if (!v.isEmpty()) return v;
-        if (asrBase(c).contains("dashscope")) return asrKey(c);
+        if (isDashUrl(asrBase(c))) return asrKey(c);
         return "";
     }
 
     static void setDashKey(Context c, String v) {
-        BridgeService.prefs(c).edit().putString("dashscope_key", v == null ? "" : v.trim()).apply();
+        BridgeService.prefs(c).edit().putString("dashscope_key", cleanKey(v)).apply();
     }
 
     static String deepseekKey(Context c) {
@@ -331,20 +382,13 @@ final class PhoneVoice {
                 setSiliconKey(c, existingSf);
             }
             String dk = dashKey(c);
-            String ds = deepseekKey(c);
+            String db = dashBase(c);
             setAsrKey(c, dk);
-            setAsrBase(c, DASH_BASE);
+            setAsrBase(c, db);
             setAsrModel(c, DASH_ASR_MODEL);
-            // 若未填独立 DeepSeek Key，直接复用同一个阿里云 DashScope Key 调百炼托管的 deepseek-v3
-            if (ds.isEmpty()) {
-                setChatKey(c, dk);
-                setChatBase(c, DASH_BASE);
-                setChatModel(c, DASH_CHAT_MODEL);
-            } else {
-                setChatKey(c, ds);
-                setChatBase(c, PAID_BASE);
-                setChatModel(c, PAID_CHAT_MODEL);
-            }
+            setChatKey(c, dk);
+            setChatBase(c, db);
+            setChatModel(c, DASH_CHAT_MODEL);
             setTtsMode(c, TTS_MODE_DASHSCOPE);
             setTtsModel(c, DASH_TTS_MODEL);
             setTtsVoice(c, DASH_TTS_VOICE);
@@ -353,6 +397,9 @@ final class PhoneVoice {
                 BridgeService.setWakeMode(c, BridgeService.WAKE_MODE_SMART);
             }
             if (dk.isEmpty()) hint = "请填写阿里云 DashScope Key";
+            else if (dk.startsWith("sk-ws-") && dashWorkspace(c).isEmpty()) {
+                hint = "sk-ws- 密钥请同时填写业务空间 Workspace ID";
+            }
         } else {
             // 切免费前保留已填过的付费 Key，避免来回切换丢失
             String existingDk = dashKey(c);
@@ -366,7 +413,7 @@ final class PhoneVoice {
             String zp = zhipuKey(c);
             String dk = dashKey(c);
             String sf = siliconKey(c);
-            // 方案 A：智谱负责想(glm-4.7-flash)与看(glm-4v-flash)，兼容仅填硅基的老配置
+            // 方案 A：智谱负责想(glm-4-flash)与看(glm-4v-flash)，兼容仅填硅基的老配置
             if (!zp.isEmpty() || sf.isEmpty()) {
                 setChatKey(c, zp);
                 setChatBase(c, ZHIPU_BASE);
@@ -379,7 +426,7 @@ final class PhoneVoice {
             if (!dk.isEmpty() || sf.isEmpty()) {
                 // 阿里云每月1日重置长期免费 paraformer-realtime-v2 + sambert-zhimiao-emo-v1
                 setAsrKey(c, dk);
-                setAsrBase(c, DASH_BASE);
+                setAsrBase(c, dashBase(c));
                 setAsrModel(c, FREE_MIX_ASR_MODEL);
                 if (!dk.isEmpty()) {
                     setTtsMode(c, TTS_MODE_DASHSCOPE);
@@ -413,7 +460,7 @@ final class PhoneVoice {
         final Context app = c.getApplicationContext();
         final boolean useDash = planPaid(app) && !dashVlmKey(app).isEmpty();
         final String key = useDash ? dashVlmKey(app) : zhipuKey(app);
-        final String url = useDash ? (DASH_BASE + "/chat/completions") : (zhipuBase(app) + "/chat/completions");
+        final String url = useDash ? (dashBase(app) + "/chat/completions") : (zhipuBase(app) + "/chat/completions");
         final String model = useDash ? DASH_VLM_MODEL : vlmModel(app);
         if (key.isEmpty()) {
             postError(cb, "还没填智谱或阿里云视觉 Key");
@@ -449,7 +496,7 @@ final class PhoneVoice {
                 final java.util.List<String> models = new java.util.ArrayList<>();
                 models.add(model);
                 String lowerVlmUrl = url.toLowerCase(java.util.Locale.US);
-                if (lowerVlmUrl.contains("dashscope")) {
+                if (isDashUrl(lowerVlmUrl)) {
                     for (String fb : new String[]{DASH_VLM_MODEL, "qwen3.5-flash", "qwen3.8-flash"}) {
                         if (!models.contains(fb)) models.add(fb);
                     }
@@ -463,7 +510,7 @@ final class PhoneVoice {
                 for (int i = 0; i < models.size(); i++) {
                     String curModel = models.get(i);
                     body.put("model", curModel);
-                    if (lowerVlmUrl.contains("dashscope")) {
+                    if (isDashUrl(lowerVlmUrl)) {
                         body.put("enable_thinking", false);
                     }
                     try {
@@ -574,7 +621,7 @@ final class PhoneVoice {
         new Thread(() -> {
             final long t0 = System.currentTimeMillis();
             try {
-                boolean useDashScope = base.toLowerCase(java.util.Locale.US).contains("dashscope")
+                boolean useDashScope = isDashUrl(base)
                         || model.toLowerCase(java.util.Locale.US).contains("qwen3-asr");
                 String result;
                 if (useDashScope) {
@@ -694,7 +741,7 @@ final class PhoneVoice {
                 .readTimeout(0, TimeUnit.MILLISECONDS)
                 .build();
         Request req = new Request.Builder()
-                .url("wss://dashscope.aliyuncs.com/api-ws/v1/inference")
+                .url(dashWsUrl(app))
                 .header("authorization", "Bearer " + key)
                 .build();
 
@@ -942,7 +989,7 @@ final class PhoneVoice {
                     for (String fb : new String[]{"glm-4-flash-250414", "glm-4-flash", "glm-z1-flash", "glm-4.7-flash"}) {
                         if (!candidates.contains(fb)) candidates.add(fb);
                     }
-                } else if (lowerBase.contains("dashscope")) {
+                } else if (isDashUrl(lowerBase)) {
                     for (String fb : new String[]{"qwen3.7-flash", "qwen-flash", "qwen3.5-flash", "qwen3.8-flash"}) {
                         if (!candidates.contains(fb)) candidates.add(fb);
                     }
@@ -963,7 +1010,7 @@ final class PhoneVoice {
                             body.put("thinking", new JSONObject().put("type", "disabled"));
                             addedThinking = true;
                         }
-                    } else if ((lowerBase.contains("siliconflow") || lowerBase.contains("dashscope"))
+                    } else if ((lowerBase.contains("siliconflow") || isDashUrl(lowerBase))
                             && (lowerModel.contains("xing4") || lowerModel.contains("qwen3")
                             || lowerModel.contains("qwen4") || lowerModel.contains("deepseek-v4"))) {
                         body.put("enable_thinking", false);
@@ -1140,7 +1187,7 @@ final class PhoneVoice {
                 .readTimeout(0, TimeUnit.MILLISECONDS)
                 .build();
         Request req = new Request.Builder()
-                .url("wss://dashscope.aliyuncs.com/api-ws/v1/inference")
+                .url(dashWsUrl(app))
                 .header("authorization", "Bearer " + key)
                 .build();
 
@@ -1270,7 +1317,7 @@ final class PhoneVoice {
                 .readTimeout(0, TimeUnit.MILLISECONDS)
                 .build();
         Request req = new Request.Builder()
-                .url("wss://dashscope.aliyuncs.com/api-ws/v1/inference")
+                .url(dashWsUrl(app))
                 .header("authorization", "Bearer " + key)
                 .build();
 
@@ -1419,7 +1466,7 @@ final class PhoneVoice {
                         .put("voice", voice)
                         .put("language_type", "Chinese"));
                 Request req = new Request.Builder()
-                        .url(TTS_URL)
+                        .url(dashTtsUrl(app))
                         .header("authorization", "Bearer " + key)
                         .header("X-DashScope-SSE", "enable")
                         .header("accept", "text/event-stream")
@@ -1509,7 +1556,17 @@ final class PhoneVoice {
                 if (err != null) msg = err.optString("message", text);
             } catch (Exception ignored) {
             }
-            throw new Exception("HTTP " + res.code() + " " + msg);
+            String who = url.contains("bigmodel") ? "[智谱] "
+                    : (isDashUrl(url) ? "[阿里] "
+                    : (url.contains("siliconflow") ? "[硅基] " : ""));
+            if (res.code() == 401 && isDashUrl(url) && key != null) {
+                if (key.startsWith("sk-sp-")) {
+                    msg = "检测到 Coding Plan 专属 Key (sk-sp-)，请改用百炼北京通用 Key (sk-)";
+                } else if (key.startsWith("sk-ws-") && dashWorkspace(c).isEmpty()) {
+                    msg = "sk-ws- 为业务空间 Key，请填写百炼 Workspace ID（如 llm-xxx）";
+                }
+            }
+            throw new Exception(who + "HTTP " + res.code() + " " + msg);
         }
         return new JSONObject(text);
     }

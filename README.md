@@ -94,9 +94,9 @@ adb install -r hachimo/build/outputs/apk/release/hachimo-release.apk
 ### 2. 配置手机端（纯手机模式可跳过第 3 步）
 
 1. 打开 **HachimoPhone** 控制台，选择 **「免费(智谱)」**、**「付费(阿里)」** 或 **「小智模式」**。
-2. **免费(智谱)**：填 **智谱 Key**（永久免费高并发 `glm-4-flash-250414` 对话 + `glm-4v-flash` 看图，遇 429 自动容灾切换）与可选 **阿里云 Key**（每月 1 日重置长期免费的 `paraformer-realtime-v2` 识别 + `sambert-zhimiao-emo-v1` 语音；留空用本机离线童声）。
-3. **付费(阿里)**：填 1 个 **阿里云 DashScope Key**（极简低价 `qwen3.7-flash` 0.2/0.8元/百万Token 对话看图 + `qwen3-asr-flash` / `cosyvoice-v3-flash`，无额度时自动回退免费 `paraformer` 与 `sambert`）。
-4. **小智模式（免 Key）**：无需任何 API Key，点击 **「获取激活码 / 测试连通」** 获取 6 位激活码到 [xiaozhi.me](https://xiaozhi.me) 绑定设备即可走 Opus 双向流式语音对话。
+2. **免费(智谱)**：填 **智谱 Key**（永久免费高并发 `glm-4-flash-250414` 对话 + `glm-4v-flash` 看图，遇 429 自动容灾切换）与可选 **阿里云 Key**（每月 1 日重置长期免费的 `paraformer-realtime-v2` 识别 + `sambert-zhimiao-emo-v1` 语音；留空用本机离线童声；若用百炼新版 `sk-ws-` 密钥，请在下方填入控制台右上角的 **Workspace ID** 如 `llm-xxx`）。
+3. **付费(阿里)**：填 1 个 **阿里云 DashScope Key**（极简低价 `qwen3.7-flash` 0.2/0.8元/百万Token 对话看图 + `qwen3-asr-flash` / `cosyvoice-v3-flash`，无额度时自动回退免费 `paraformer` 与 `sambert`；`sk-ws-` 密钥同步填 **Workspace ID**）。
+4. **小智模式（兼容自建后端）**：手动填入个人自建 [`xiaozhi-esp32-server`](https://github.com/xinnan-tech/xiaozhi-esp32-server) 或授权小智服务端的 **OTA 地址**（默认留空），点击 **「获取激活码 / 测试连通」** 完成设备绑定即可走 Opus 双向流式语音对话。
 5. 点击 **「保存语音与模型配置」**（也可点击 **「试听」** 实时验证本机/云端/系统 TTS）；如使用折叠屏合盖自启，点 **「开启外屏常驻」** 授予悬浮窗权限，再点 **「打开外屏展示页」**。
 
 ### 3. 启动 PC Bridge（可选，联动电脑 Agent）

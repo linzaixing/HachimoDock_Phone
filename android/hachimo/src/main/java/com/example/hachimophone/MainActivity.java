@@ -165,20 +165,29 @@ public final class MainActivity extends Activity implements AppState.Listener {
                 "智谱 Key（永久免费 · 对话+看图共用）", PhoneVoice.zhipuKey(this), true);
         final EditText freeDashKeyInput = styledInput(
                 "阿里云 Key（每月重置 paraformer+sambert，留空用本机童声）", PhoneVoice.dashKey(this), true);
+        final EditText freeDashWsInput = styledInput(
+                "阿里云 Workspace ID（sk-ws- 密钥必填，如 llm-xxx，旧 sk- 留空）",
+                PhoneVoice.dashWorkspace(this), false);
         final EditText dashKeyInput = styledInput(
                 "阿里云 DashScope Key（一个 Key 全通，sk-…）", PhoneVoice.dashKey(this), true);
+        final EditText paidDashWsInput = styledInput(
+                "阿里云 Workspace ID（sk-ws- 密钥必填，如 llm-xxx，旧 sk- 留空）",
+                PhoneVoice.dashWorkspace(this), false);
         final EditText xzOtaInput = styledInput(
-                XiaozhiClient.DEFAULT_OTA_URL, XiaozhiClient.otaUrl(this), false);
+                "http://192.168.x.x:8003/xiaozhi/ota/（必填，自建或第三方小智 OTA 地址）",
+                XiaozhiClient.otaUrl(this), false);
 
         final LinearLayout freeKeysBox = new LinearLayout(this);
         freeKeysBox.setOrientation(LinearLayout.VERTICAL);
         addLabeledField(freeKeysBox, "智谱 Key（永久免费 · 对话 glm-4-flash + 看图）", zhipuKeyInput);
         addLabeledField(freeKeysBox, "阿里云 Key（每月重置免费识别+语音 · 留空用本机童声）", freeDashKeyInput);
+        addLabeledField(freeKeysBox, "阿里云 Workspace ID（填 sk-ws- 密钥时必配，见控制台右上角）", freeDashWsInput);
         voiceCard.addView(freeKeysBox);
 
         final LinearLayout paidKeysBox = new LinearLayout(this);
         paidKeysBox.setOrientation(LinearLayout.VERTICAL);
         addLabeledField(paidKeysBox, "阿里云 DashScope Key（识别 + qwen3.7-flash 对话/看图 + 语音）", dashKeyInput);
+        addLabeledField(paidKeysBox, "阿里云 Workspace ID（填 sk-ws- 密钥时必配，如 llm-xxx）", paidDashWsInput);
         voiceCard.addView(paidKeysBox);
 
         final LinearLayout xiaozhiBox = new LinearLayout(this);
@@ -191,7 +200,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         xzStLp.bottomMargin = dp(8);
         xiaozhiBox.addView(xzStatusText, xzStLp);
-        addLabeledField(xiaozhiBox, "小智 OTA 地址（默认官方云，可改自建服务器）", xzOtaInput);
+        addLabeledField(xiaozhiBox, "小智 OTA 地址（手动填写自建 xiaozhi-esp32-server 地址）", xzOtaInput);
 
         final Runnable refreshXzStatus = () -> {
             String mac = XiaozhiClient.deviceId(this);
@@ -202,7 +211,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
                 state = "状态：已激活 · 可直接对话（Opus 流式）";
                 xzStatusText.setTextColor(0xFF86EFAC);
             } else if (!XiaozhiClient.activationCode(this).isEmpty()) {
-                state = "待绑定激活码：" + XiaozhiClient.activationCode(this) + "（请去 xiaozhi.me 输入）";
+                state = "待绑定激活码：" + XiaozhiClient.activationCode(this) + "（请在小智控制台输入）";
                 xzStatusText.setTextColor(0xFFFDE68A);
             } else {
                 state = "状态：未检查激活（点下方「获取激活码」发起 v1 注册）";
@@ -224,7 +233,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
                 public void onNeedActivation(String code) {
                     refreshXzStatus.run();
                     Toast.makeText(MainActivity.this,
-                            "请前往 xiaozhi.me 输入激活码：" + code, Toast.LENGTH_LONG).show();
+                            "请在小智控制台输入激活码：" + code, Toast.LENGTH_LONG).show();
                 }
 
                 @Override
@@ -301,6 +310,12 @@ public final class MainActivity extends Activity implements AppState.Listener {
         previewSidBtn.setOnClickListener(v -> {
             boolean paid = PhoneVoice.planPaid(this);
             String dk = (paid ? dashKeyInput : freeDashKeyInput).getText().toString().trim();
+            String ws = (paid ? paidDashWsInput : freeDashWsInput).getText().toString().trim();
+            if (!ws.isEmpty() || !PhoneVoice.dashWorkspace(this).isEmpty()) {
+                PhoneVoice.setDashWorkspace(this, ws);
+                paidDashWsInput.setText(PhoneVoice.dashWorkspace(this));
+                freeDashWsInput.setText(PhoneVoice.dashWorkspace(this));
+            }
             previewVoice(paid, dk);
         });
         addWeight(ttsRow, previewSidBtn, 0.6f, 0);
@@ -327,10 +342,15 @@ public final class MainActivity extends Activity implements AppState.Listener {
             int wasMode = PhoneVoice.planMode(this);
             String curDk = (wasMode == PhoneVoice.PLAN_PAID ? dashKeyInput : freeDashKeyInput)
                     .getText().toString().trim();
+            String curWs = (wasMode == PhoneVoice.PLAN_PAID ? paidDashWsInput : freeDashWsInput)
+                    .getText().toString().trim();
             dashKeyInput.setText(curDk);
             freeDashKeyInput.setText(curDk);
             PhoneVoice.setZhipuKey(this, zhipuKeyInput.getText().toString());
             PhoneVoice.setDashKey(this, curDk);
+            PhoneVoice.setDashWorkspace(this, curWs);
+            paidDashWsInput.setText(PhoneVoice.dashWorkspace(this));
+            freeDashWsInput.setText(PhoneVoice.dashWorkspace(this));
             XiaozhiClient.setOtaUrl(this, xzOtaInput.getText().toString());
 
             if (v == xiaozhiTab) {
@@ -338,8 +358,8 @@ public final class MainActivity extends Activity implements AppState.Listener {
                 refreshPlan[0].run();
                 refreshXzStatus.run();
                 Toast.makeText(this,
-                        XiaozhiClient.activated(this) ? "已切到小智云（免Key，已激活）"
-                                : "已切到小智云（点「获取激活码」去 xiaozhi.me 绑定）",
+                        XiaozhiClient.activated(this) ? "已切到小智模式（已激活）"
+                                : "已切到小智模式（请填 OTA 地址并获取激活码）",
                         Toast.LENGTH_LONG).show();
                 return;
             }
@@ -369,6 +389,10 @@ public final class MainActivity extends Activity implements AppState.Listener {
             if (mode == PhoneVoice.PLAN_XIAOZHI) {
                 XiaozhiClient.setOtaUrl(this, xzOtaInput.getText().toString());
                 refreshXzStatus.run();
+                if (XiaozhiClient.otaUrl(this).isEmpty()) {
+                    Toast.makeText(this, "请先填写小智 OTA 地址", Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 Toast.makeText(this, XiaozhiClient.activated(this)
                         ? "已保存：小智云已就绪"
                         : "已保存：请点「获取激活码」绑定小智设备", Toast.LENGTH_SHORT).show();
@@ -379,15 +403,35 @@ public final class MainActivity extends Activity implements AppState.Listener {
             String prevTts = PhoneVoice.ttsMode(this);
             String zp = zhipuKeyInput.getText().toString().trim();
             String dk = (paid ? dashKeyInput : freeDashKeyInput).getText().toString().trim();
-            dashKeyInput.setText(dk);
-            freeDashKeyInput.setText(dk);
+            String ws = (paid ? paidDashWsInput : freeDashWsInput).getText().toString().trim();
             PhoneVoice.setZhipuKey(this, zp);
             PhoneVoice.setDashKey(this, dk);
+            PhoneVoice.setDashWorkspace(this, ws);
+            String cleanDk = PhoneVoice.dashKey(this);
+            String cleanZp = PhoneVoice.zhipuKey(this);
+            String cleanWs = PhoneVoice.dashWorkspace(this);
+            dashKeyInput.setText(cleanDk);
+            freeDashKeyInput.setText(cleanDk);
+            paidDashWsInput.setText(cleanWs);
+            freeDashWsInput.setText(cleanWs);
+            zhipuKeyInput.setText(cleanZp);
             String hintMsg = PhoneVoice.applyPlan(this, paid);
-            if (hadDk && !dk.isEmpty() && !PhoneVoice.TTS_MODE_DASHSCOPE.equals(prevTts)) {
+            if (hadDk && !cleanDk.isEmpty() && !PhoneVoice.TTS_MODE_DASHSCOPE.equals(prevTts)) {
                 PhoneVoice.setTtsMode(this, prevTts);
             }
             refreshTtsBtn[0].run();
+            if (cleanDk.startsWith("sk-sp-")) {
+                Toast.makeText(this,
+                        "检测到 Coding Plan 专属 Key (sk-sp-)，不能调用百炼模型，请改用北京通用 API-KEY (sk-)",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (cleanDk.startsWith("sk-ws-") && cleanWs.isEmpty()) {
+                Toast.makeText(this,
+                        "sk-ws- 为业务空间 Key，请填写下方 Workspace ID（如 llm-xxx，见百炼控制台右上角）",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
             String toast = PhoneVoice.asrReady(this) && PhoneVoice.chatReady(this)
                     ? "已保存：纯手机可独立对话"
                     : ("已保存" + (hintMsg.isEmpty() ? "" : "（" + hintMsg + "）"));
