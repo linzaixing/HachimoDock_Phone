@@ -75,10 +75,10 @@ public final class BridgeService extends Service {
         try {
             android.content.pm.PackageInfo pi =
                     c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
-            String ver = pi.versionName == null || pi.versionName.isEmpty() ? "1.0.0" : pi.versionName;
+            String ver = pi.versionName == null || pi.versionName.isEmpty() ? "1.0.1-lite" : pi.versionName;
             return ver + " (" + pi.versionCode + ")";
         } catch (Exception e) {
-            return "1.0.0";
+            return "1.0.1-lite";
         }
     }
 
@@ -117,8 +117,9 @@ public final class BridgeService extends Service {
             return (m >= 0 && m <= 2) ? m : WAKE_MODE_SMART;
         }
         if (sp.getBoolean("kws_strict", false)) return WAKE_MODE_STRICT;
-        // 免费方案 ASR 零费用，默认走全量兜底保唤醒率；付费方案默认走智能分级省额度
-        return PhoneVoice.planPaid(c) ? WAKE_MODE_SMART : WAKE_MODE_ASR;
+        // 走阿里云识别（含免费 paraformer 10h/月）或付费方案默认智能分级省额度；纯免费无限次识别走全量兜底
+        return (PhoneVoice.planPaid(c) || PhoneVoice.asrBase(c).contains("dashscope"))
+                ? WAKE_MODE_SMART : WAKE_MODE_ASR;
     }
 
     static void setWakeMode(Context c, int mode) {

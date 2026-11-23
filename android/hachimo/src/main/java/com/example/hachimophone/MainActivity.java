@@ -70,7 +70,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
         titleCol.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Z Flip5 外屏宠物 · 语音与视觉控制台");
+        subtitle.setText("外屏宠物 · 语音与视觉控制台");
         subtitle.setTextColor(TEXT_SECONDARY);
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         titleCol.addView(subtitle);
@@ -146,27 +146,25 @@ public final class MainActivity extends Activity implements AppState.Listener {
         segLp.bottomMargin = dp(10);
         voiceCard.addView(planSegment, segLp);
 
-        final TextView freePlanTab = pillButton("免费 (硅基 1 Key)", ACCENT_CYAN, ACCENT_TEXT_DARK);
+        final TextView freePlanTab = pillButton("免费 (智谱+阿里)", ACCENT_CYAN, ACCENT_TEXT_DARK);
         freePlanTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         final TextView paidPlanTab = pillButton("付费 (阿里云 1 Key)", Color.TRANSPARENT, TEXT_SECONDARY);
         paidPlanTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         addWeight(planSegment, freePlanTab, 1f, 4);
         addWeight(planSegment, paidPlanTab, 1f, 0);
 
-        // 常用 Key（精简清晰：每套方案只填 1 个核心 Key，其余全部可选或折叠在高级抽屉）
-        final EditText siliconKeyInput = styledInput(
-                "硅基流动 Key（免费识别 + 对话共用，sk-…）", PhoneVoice.siliconKey(this), true);
+        // 常用 Key（免费：智谱负责想 glm-4.7-flash 和看 glm-4v-flash + 阿里云每月免费语音/或本机童声；付费：阿里云 1 Key）
         final EditText zhipuKeyInput = styledInput(
-                "智谱 Key（可选，免费视觉看图 glm-4v-flash）", PhoneVoice.zhipuKey(this), true);
-        final EditText deepseekKeyInput = styledInput(
-                "DeepSeek 官方独立 Key（可选，留空走阿里云 deepseek-v3）", PhoneVoice.deepseekKey(this), true);
+                "智谱 Key（永久免费 · 对话+看图共用）", PhoneVoice.zhipuKey(this), true);
+        final EditText freeDashKeyInput = styledInput(
+                "阿里云 Key（每月重置 paraformer+sambert，留空用本机童声）", PhoneVoice.dashKey(this), true);
         final EditText dashKeyInput = styledInput(
                 "阿里云 DashScope Key（一个 Key 全通，sk-…）", PhoneVoice.dashKey(this), true);
 
         final LinearLayout freeKeysBox = new LinearLayout(this);
         freeKeysBox.setOrientation(LinearLayout.VERTICAL);
-        addLabeledField(freeKeysBox, "硅基流动 Key（免费主力 · 1 Key 全通）", siliconKeyInput);
-        addLabeledField(freeKeysBox, "智谱 Key（可选 · 免费看图）", zhipuKeyInput);
+        addLabeledField(freeKeysBox, "智谱 Key（永久免费 · 对话 glm-4.7-flash + 看图）", zhipuKeyInput);
+        addLabeledField(freeKeysBox, "阿里云 Key（每月重置免费识别+语音 · 留空用本机童声）", freeDashKeyInput);
         voiceCard.addView(freeKeysBox);
 
         final LinearLayout paidKeysBox = new LinearLayout(this);
@@ -174,33 +172,32 @@ public final class MainActivity extends Activity implements AppState.Listener {
         addLabeledField(paidKeysBox, "阿里云 DashScope Key（识别 + DeepSeek-V3 + CosyVoice + 看图）", dashKeyInput);
         voiceCard.addView(paidKeysBox);
 
-        // 高级配置输入框（默认折叠）
-        final EditText asrKeyInput = styledInput("识别独立 Key（一般留空与硅基一致）", PhoneVoice.asrKey(this), true);
-        final EditText asrBaseInput = styledInput("识别接口地址", PhoneVoice.asrBase(this), false);
-        final EditText asrModelInput = styledInput("识别模型", PhoneVoice.asrModel(this), false);
-        final EditText chatKeyInput = styledInput("对话独立 Key（本机模型留空）", PhoneVoice.chatKey(this), true);
-        final EditText baseInput = styledInput("对话接口地址", PhoneVoice.chatBase(this), false);
-        final EditText modelInput = styledInput("对话模型名", PhoneVoice.chatModel(this), false);
-        final EditText ttsBaseInput = styledInput("TTS 接口地址（本地/OpenAI 时生效）", PhoneVoice.ttsBase(this), false);
-        final EditText ttsModelInput = styledInput("TTS 模型", PhoneVoice.ttsModel(this), false);
-        final EditText voiceInput = styledInput("TTS 音色（如 longjielidou_v3）", PhoneVoice.ttsVoice(this), false);
-
-        // 语音与唤醒快捷控制（2 行紧凑胶囊）
+        // 语音与唤醒快捷控制
         LinearLayout ttsRow = rowLayout();
         final TextView ttsModeBtn = pillButton("", BG_PILL, TEXT_PRIMARY);
         final Runnable[] refreshTtsBtn = new Runnable[1];
         refreshTtsBtn[0] = () -> {
             String m = PhoneVoice.ttsMode(this);
+            String tm = PhoneVoice.ttsModel(this).toLowerCase(java.util.Locale.US);
+            String dashLabel = tm.startsWith("sambert") ? "发音：Sambert免费" : "发音：CosyVoice";
             String label = PhoneVoice.TTS_MODE_LOCAL.equals(m) ? "发音：本机童声"
                     : (PhoneVoice.TTS_MODE_OPENAI.equals(m) ? "发音：OpenAI/本地"
-                    : (PhoneVoice.TTS_MODE_DASHSCOPE.equals(m) ? "发音：CosyVoice" : "发音：0元系统TTS"));
+                    : (PhoneVoice.TTS_MODE_DASHSCOPE.equals(m) ? dashLabel : "发音：0元系统TTS"));
             ttsModeBtn.setText(label);
         };
         ttsModeBtn.setOnClickListener(v -> {
             String cur = PhoneVoice.ttsMode(this);
-            String next = PhoneVoice.TTS_MODE_SYSTEM.equals(cur) ? PhoneVoice.TTS_MODE_LOCAL
-                    : (PhoneVoice.TTS_MODE_LOCAL.equals(cur) ? PhoneVoice.TTS_MODE_OPENAI
-                    : (PhoneVoice.TTS_MODE_OPENAI.equals(cur) ? PhoneVoice.TTS_MODE_DASHSCOPE : PhoneVoice.TTS_MODE_SYSTEM));
+            boolean hasDash = !(PhoneVoice.planPaid(this) ? dashKeyInput : freeDashKeyInput)
+                    .getText().toString().trim().isEmpty()
+                    || !PhoneVoice.dashKey(this).isEmpty();
+            String next;
+            if (PhoneVoice.TTS_MODE_SYSTEM.equals(cur)) {
+                next = PhoneVoice.TTS_MODE_LOCAL;
+            } else if (PhoneVoice.TTS_MODE_LOCAL.equals(cur)) {
+                next = hasDash ? PhoneVoice.TTS_MODE_DASHSCOPE : PhoneVoice.TTS_MODE_SYSTEM;
+            } else {
+                next = PhoneVoice.TTS_MODE_SYSTEM;
+            }
             PhoneVoice.setTtsMode(this, next);
             refreshTtsBtn[0].run();
         });
@@ -233,30 +230,19 @@ public final class MainActivity extends Activity implements AppState.Listener {
         };
         refreshPlan[0].run();
 
-        final Runnable syncAdvancedFields = () -> {
-            asrKeyInput.setText(PhoneVoice.asrKey(this));
-            asrBaseInput.setText(PhoneVoice.asrBase(this));
-            asrModelInput.setText(PhoneVoice.asrModel(this));
-            chatKeyInput.setText(PhoneVoice.chatKey(this));
-            baseInput.setText(PhoneVoice.chatBase(this));
-            modelInput.setText(PhoneVoice.chatModel(this));
-            ttsBaseInput.setText(PhoneVoice.ttsBase(this));
-            ttsModelInput.setText(PhoneVoice.ttsModel(this));
-            voiceInput.setText(PhoneVoice.ttsVoice(this));
-        };
-
         View.OnClickListener switchPlan = v -> {
             boolean toPaid = v == paidPlanTab;
-            // 切换前先把当前可见/已输入的 Key 落盘，随后立即刷新 Tab 与输入框（不再因缺 Key 拦截切换）
-            PhoneVoice.setSiliconKey(this, siliconKeyInput.getText().toString());
+            boolean wasPaid = PhoneVoice.planPaid(this);
+            String curDk = (wasPaid ? dashKeyInput : freeDashKeyInput).getText().toString().trim();
+            dashKeyInput.setText(curDk);
+            freeDashKeyInput.setText(curDk);
             PhoneVoice.setZhipuKey(this, zhipuKeyInput.getText().toString());
-            PhoneVoice.setDashKey(this, dashKeyInput.getText().toString());
-            PhoneVoice.setDeepseekKey(this, deepseekKeyInput.getText().toString());
+            PhoneVoice.setDashKey(this, curDk);
             String hintMsg = PhoneVoice.applyPlan(this, toPaid);
             refreshPlan[0].run();
             refreshTtsBtn[0].run();
-            syncAdvancedFields.run();
-            String msg = toPaid ? "已切到付费方案" : "已切到免费方案";
+            String msg = toPaid ? "已切到付费方案"
+                    : (curDk.isEmpty() ? "已切到智谱免费方案（本机童声）" : "已切到智谱+阿里长期免费方案");
             if (!hintMsg.isEmpty()) msg += "（" + hintMsg + "）";
             Toast.makeText(this, msg, hintMsg.isEmpty() ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
         };
@@ -268,155 +254,28 @@ public final class MainActivity extends Activity implements AppState.Listener {
         LinearLayout.LayoutParams saveLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         saveLp.topMargin = dp(2);
-        saveLp.bottomMargin = dp(8);
+        saveLp.bottomMargin = dp(4);
         voiceCard.addView(saveCloud, saveLp);
 
-        // 折叠高级抽屉
-        final LinearLayout advDrawer = new LinearLayout(this);
-        advDrawer.setOrientation(LinearLayout.VERTICAL);
-        advDrawer.setVisibility(View.GONE);
-        advDrawer.setPadding(0, dp(6), 0, 0);
-
-        final TextView advToggle = new TextView(this);
-        advToggle.setText("▸ 展开高级接口、一键预设与自定义模型");
-        advToggle.setTextColor(0xFF67E8F9);
-        advToggle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        advToggle.setPadding(0, dp(4), 0, dp(4));
-        advToggle.setOnClickListener(v -> {
-            boolean open = advDrawer.getVisibility() != View.VISIBLE;
-            advDrawer.setVisibility(open ? View.VISIBLE : View.GONE);
-            advToggle.setText(open ? "▾ 收起高级接口与模型参数" : "▸ 展开高级接口、一键预设与自定义模型");
-        });
-        voiceCard.addView(advToggle);
-        voiceCard.addView(advDrawer);
-
-        // 一键预设放入高级抽屉
-        LinearLayout presetRow = rowLayout();
-        TextView presetSf = pillButton("硅基免费预设", BG_PILL, TEXT_PRIMARY);
-        presetSf.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        presetSf.setOnClickListener(v -> {
-            asrBaseInput.setText("https://api.siliconflow.cn/v1");
-            asrModelInput.setText(PhoneVoice.FREE_ASR_MODEL);
-            baseInput.setText("https://api.siliconflow.cn/v1");
-            modelInput.setText(PhoneVoice.FREE_CHAT_MODEL);
-            String sf = siliconKeyInput.getText().toString().trim();
-            if (!sf.isEmpty()) {
-                asrKeyInput.setText(sf);
-                chatKeyInput.setText(sf);
-            }
-            PhoneVoice.setTtsMode(this, PhoneVoice.TTS_MODE_LOCAL);
-            refreshTtsBtn[0].run();
-            Toast.makeText(this, "已填入硅基免费预设，点「保存」生效", Toast.LENGTH_SHORT).show();
-        });
-        addWeight(presetRow, presetSf, 1f, 6);
-
-        TextView presetZhipu = pillButton("智谱免费预设", BG_PILL, TEXT_PRIMARY);
-        presetZhipu.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        presetZhipu.setOnClickListener(v -> {
-            baseInput.setText("https://open.bigmodel.cn/api/paas/v4");
-            modelInput.setText("glm-4-flash");
-            String zp = zhipuKeyInput.getText().toString().trim();
-            if (!zp.isEmpty()) chatKeyInput.setText(zp);
-            PhoneVoice.setTtsMode(this, PhoneVoice.TTS_MODE_SYSTEM);
-            refreshTtsBtn[0].run();
-            Toast.makeText(this, "已填入智谱 glm-4-flash 预设，点「保存」生效", Toast.LENGTH_SHORT).show();
-        });
-        addWeight(presetRow, presetZhipu, 1f, 6);
-
-        TextView presetLocal = pillButton("本机小模型", BG_PILL, TEXT_PRIMARY);
-        presetLocal.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        presetLocal.setOnClickListener(v -> {
-            baseInput.setText("http://127.0.0.1:11434/v1");
-            modelInput.setText("qwen2.5:1.5b");
-            chatKeyInput.setText("");
-            PhoneVoice.setTtsMode(this, PhoneVoice.TTS_MODE_SYSTEM);
-            refreshTtsBtn[0].run();
-            Toast.makeText(this, "已填入本机 Ollama 地址（免 Key），点「保存」生效", Toast.LENGTH_SHORT).show();
-        });
-        addWeight(presetRow, presetLocal, 1f, 0);
-        advDrawer.addView(presetRow);
-
-        addLabeledField(advDrawer, "识别接口地址 / 模型 / 独立 Key", asrBaseInput);
-        LinearLayout asrPair = rowLayout();
-        addWeight(asrPair, asrModelInput, 1f, 6);
-        addWeight(asrPair, asrKeyInput, 1f, 0);
-        advDrawer.addView(asrPair);
-
-        addLabeledField(advDrawer, "对话接口地址 / 模型 / 独立 Key", baseInput);
-        LinearLayout chatPair = rowLayout();
-        addWeight(chatPair, modelInput, 1f, 6);
-        addWeight(chatPair, chatKeyInput, 1f, 0);
-        advDrawer.addView(chatPair);
-
-        addLabeledField(advDrawer, "TTS 接口 / 模型 / 音色", ttsBaseInput);
-        LinearLayout ttsPair = rowLayout();
-        addWeight(ttsPair, ttsModelInput, 1f, 6);
-        addWeight(ttsPair, voiceInput, 1f, 0);
-        advDrawer.addView(ttsPair);
-
-        addLabeledField(advDrawer, "DeepSeek 官方独立 Key（可选，留空自动用阿里云 DeepSeek）", deepseekKeyInput);
-
         saveCloud.setOnClickListener(v -> {
-            String sf = siliconKeyInput.getText().toString().trim();
+            boolean paid = PhoneVoice.planPaid(this);
+            boolean hadDk = !PhoneVoice.dashKey(this).isEmpty();
+            String prevTts = PhoneVoice.ttsMode(this);
             String zp = zhipuKeyInput.getText().toString().trim();
-            String dk = dashKeyInput.getText().toString().trim();
-            String ds = deepseekKeyInput.getText().toString().trim();
-            PhoneVoice.setSiliconKey(this, sf);
+            String dk = (paid ? dashKeyInput : freeDashKeyInput).getText().toString().trim();
+            dashKeyInput.setText(dk);
+            freeDashKeyInput.setText(dk);
             PhoneVoice.setZhipuKey(this, zp);
             PhoneVoice.setDashKey(this, dk);
-            PhoneVoice.setDeepseekKey(this, ds);
-
-            String ab = asrBaseInput.getText().toString().trim();
-            String cb = baseInput.getText().toString().trim();
-            String cm = modelInput.getText().toString().trim();
-            String ak = asrKeyInput.getText().toString().trim();
-            String ck = chatKeyInput.getText().toString().trim();
-            boolean paid = PhoneVoice.planPaid(this);
-            if (!paid) {
-                if (!sf.isEmpty() && ab.contains("siliconflow")) ak = sf;
-                if (!sf.isEmpty() && cb.contains("siliconflow")) ck = sf;
-                if (ck.isEmpty() && !zp.isEmpty() && cb.contains("bigmodel.cn")) ck = zp;
-            } else {
-                if (!dk.isEmpty() && ab.contains("dashscope")) ak = dk;
-                if (!ds.isEmpty()) {
-                    ck = ds;
-                    if (cb.contains("dashscope")) {
-                        cb = PhoneVoice.PAID_BASE;
-                        cm = PhoneVoice.PAID_CHAT_MODEL;
-                    }
-                } else if (!dk.isEmpty() && (cb.contains("dashscope") || cb.contains("deepseek"))) {
-                    // 没填独立 DeepSeek Key 时自动走阿里云百炼的 deepseek-v3，只需 1 个 Key
-                    ck = dk;
-                    cb = PhoneVoice.DASH_BASE;
-                    if (cm.equals(PhoneVoice.PAID_CHAT_MODEL) || cm.isEmpty()) {
-                        cm = PhoneVoice.DASH_CHAT_MODEL;
-                    }
-                }
+            String hintMsg = PhoneVoice.applyPlan(this, paid);
+            if (hadDk && !dk.isEmpty() && !PhoneVoice.TTS_MODE_DASHSCOPE.equals(prevTts)) {
+                PhoneVoice.setTtsMode(this, prevTts);
             }
-            if (ak.isEmpty() && !ck.isEmpty() && ab.contains("siliconflow") && cb.contains("siliconflow")) ak = ck;
-            if (ck.isEmpty() && !ak.isEmpty() && ab.contains("siliconflow") && cb.contains("siliconflow")) ck = ak;
-            if (!ak.isEmpty() && ab.contains("siliconflow") && sf.isEmpty()) {
-                PhoneVoice.setSiliconKey(this, ak);
-                siliconKeyInput.setText(ak);
-            }
-            asrKeyInput.setText(ak);
-            chatKeyInput.setText(ck);
-            baseInput.setText(cb);
-            modelInput.setText(cm);
-
-            PhoneVoice.setAsrKey(this, ak);
-            PhoneVoice.setAsrBase(this, ab);
-            PhoneVoice.setAsrModel(this, asrModelInput.getText().toString());
-            PhoneVoice.setChatKey(this, ck);
-            PhoneVoice.setChatBase(this, cb);
-            PhoneVoice.setChatModel(this, cm);
-            PhoneVoice.setTtsBase(this, ttsBaseInput.getText().toString());
-            PhoneVoice.setTtsModel(this, ttsModelInput.getText().toString());
-            PhoneVoice.setTtsVoice(this, voiceInput.getText().toString());
             refreshTtsBtn[0].run();
-            Toast.makeText(this, PhoneVoice.asrReady(this) && PhoneVoice.chatReady(this)
+            String toast = PhoneVoice.asrReady(this) && PhoneVoice.chatReady(this)
                     ? "已保存：纯手机可独立对话"
-                    : "已保存（请填写对应方案的 Key）", Toast.LENGTH_SHORT).show();
+                    : ("已保存" + (hintMsg.isEmpty() ? "" : "（" + hintMsg + "）"));
+            Toast.makeText(this, toast, Toast.LENGTH_SHORT).show();
         });
 
         // ------------------------------------------------------------ 卡片 3：电脑 Bridge 联动
@@ -523,7 +382,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
         final Runnable[] refreshMlkit = new Runnable[1];
         refreshMlkit[0] = () -> {
             boolean on = BridgeService.mlkitEnabled(this);
-            mlkit.setText(on ? "ML Kit：开" : "ML Kit：关");
+            mlkit.setText(on ? "人脸追踪：开" : "人脸追踪：关");
             stylePill(mlkit, on ? 0xFF164E63 : BG_PILL, on ? 0xFF67E8F9 : TEXT_SECONDARY);
         };
         mlkit.setOnClickListener(v -> {

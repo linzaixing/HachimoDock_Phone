@@ -78,7 +78,7 @@ final class PhoneVoice {
 
     static String asrBase(Context c) {
         String v = BridgeService.prefs(c).getString("asr_base", "");
-        return v == null || v.trim().isEmpty() ? "https://api.siliconflow.cn/v1" : trimSlash(v);
+        return v == null || v.trim().isEmpty() ? DASH_BASE : trimSlash(v);
     }
 
     static void setAsrBase(Context c, String v) {
@@ -87,8 +87,7 @@ final class PhoneVoice {
 
     static String asrModel(Context c) {
         String v = BridgeService.prefs(c).getString("asr_model", "");
-        return v == null || v.trim().isEmpty()
-                ? "XingChenAGI/XingChenASR-V3.2-Ultra" : v.trim();
+        return v == null || v.trim().isEmpty() ? FREE_MIX_ASR_MODEL : v.trim();
     }
 
     static void setAsrModel(Context c, String v) {
@@ -105,7 +104,7 @@ final class PhoneVoice {
 
     static String chatBase(Context c) {
         String v = BridgeService.prefs(c).getString("chat_base", "");
-        return v == null || v.trim().isEmpty() ? "https://api.siliconflow.cn/v1" : trimSlash(v);
+        return v == null || v.trim().isEmpty() ? ZHIPU_BASE : trimSlash(v);
     }
 
     static void setChatBase(Context c, String v) {
@@ -114,8 +113,8 @@ final class PhoneVoice {
 
     static String chatModel(Context c) {
         String v = BridgeService.prefs(c).getString("chat_model", "");
-        // 默认用硅基的免费对话模型（Qwen3-8B 免费）
-        return v == null || v.trim().isEmpty() ? "Qwen/Qwen3-8B" : v.trim();
+        // 默认用智谱永久免费对话模型（glm-4.7-flash，关闭思考链保证语音低延迟）
+        return v == null || v.trim().isEmpty() ? FREE_CHAT_MODEL : v.trim();
     }
 
     static void setChatModel(Context c, String v) {
@@ -132,15 +131,15 @@ final class PhoneVoice {
         return !chatKey(c).isEmpty() || isLocalUrl(chatBase(c));
     }
 
-    /** TTS 模式：system（默认 0 元系统语音）/ openai（本地或免费 /audio/speech）/ dashscope */
+    /** TTS 模式：local（默认 0 元离线童声）/ system（0 元系统语音）/ dashscope */
     static String ttsMode(Context c) {
         String v = BridgeService.prefs(c).getString("tts_mode", "");
-        if (v == null || v.trim().isEmpty()) return TTS_MODE_SYSTEM;
+        if (v == null || v.trim().isEmpty()) return TTS_MODE_LOCAL;
         return v.trim();
     }
 
     static void setTtsMode(Context c, String v) {
-        BridgeService.prefs(c).edit().putString("tts_mode", v == null ? TTS_MODE_SYSTEM : v.trim()).apply();
+        BridgeService.prefs(c).edit().putString("tts_mode", v == null ? TTS_MODE_LOCAL : v.trim()).apply();
     }
 
     static String ttsBase(Context c) {
@@ -173,7 +172,7 @@ final class PhoneVoice {
     /** 是否启用云端/本地非系统 TTS（默认 system 模式返回 false，直接用 0 元本机系统 TTS） */
     static boolean ttsReady(Context c) {
         String mode = ttsMode(c);
-        if (TTS_MODE_DASHSCOPE.equals(mode)) return !asrKey(c).isEmpty();
+        if (TTS_MODE_DASHSCOPE.equals(mode)) return !dashAuthKey(c).isEmpty();
         if (TTS_MODE_OPENAI.equals(mode)) return isLocalUrl(ttsBase(c)) || !asrKey(c).isEmpty() || !chatKey(c).isEmpty();
         return false;
     }
@@ -209,17 +208,32 @@ final class PhoneVoice {
     }
 
     private static String dashVlmKey(Context c) {
+        if (!planPaid(c)) return "";
         String dk = dashKey(c);
-        if (!dk.isEmpty() && planPaid(c)) return dk;
+        if (!dk.isEmpty()) return dk;
         if (!asrKey(c).isEmpty() && asrBase(c).contains("dashscope")) return asrKey(c);
+        return "";
+    }
+
+    /** 阿里云语音通道统一鉴权 Key（优先 dashKey，兼容从识别/对话输入框读取） */
+    private static String dashAuthKey(Context c) {
+        String dk = dashKey(c);
+        if (!dk.isEmpty()) return dk;
+        if (asrBase(c).contains("dashscope") && !asrKey(c).isEmpty()) return asrKey(c);
+        if (chatBase(c).contains("dashscope") && !chatKey(c).isEmpty()) return chatKey(c);
         return "";
     }
 
     // ------------------------------------------------------------ 免费/付费方案一键切换
 
+    static final String ZHIPU_BASE = "https://open.bigmodel.cn/api/paas/v4";
     static final String FREE_BASE = "https://api.siliconflow.cn/v1";
     static final String FREE_ASR_MODEL = "XingChenAGI/XingChenASR-V3.2-Ultra";
-    static final String FREE_CHAT_MODEL = "Qwen/Qwen3-8B";
+    static final String FREE_CHAT_MODEL = "glm-4.7-flash";
+    static final String FREE_SF_CHAT_MODEL = "Qwen/Qwen3-8B";
+    /** 免费高音质语音：阿里云每月1日重置长期免费识别(10h/月) + Sambert语音(3万字/音色/月) */
+    static final String FREE_MIX_ASR_MODEL = "paraformer-realtime-v2";
+    static final String FREE_MIX_TTS_MODEL = "sambert-zhimiao-emo-v1";
     static final String PAID_BASE = "https://api.deepseek.com/v1";
     static final String PAID_CHAT_MODEL = "deepseek-chat";
     /** 付费方案：一个阿里云 DashScope Key 跑通全部（识别 + DeepSeek-V3 对话 + CosyVoice + 看图） */
@@ -317,30 +331,58 @@ final class PhoneVoice {
             if (!existingDs.isEmpty() && BridgeService.prefs(c).getString("deepseek_key", "").isEmpty()) {
                 setDeepseekKey(c, existingDs);
             }
+            String zp = zhipuKey(c);
+            String dk = dashKey(c);
             String sf = siliconKey(c);
-            setAsrKey(c, sf);
-            setAsrBase(c, FREE_BASE);
-            setAsrModel(c, FREE_ASR_MODEL);
-            setChatKey(c, sf);
-            setChatBase(c, FREE_BASE);
-            setChatModel(c, FREE_CHAT_MODEL);
-            setTtsMode(c, TTS_MODE_LOCAL);
-            // 免费方案 ASR 不花钱：切到全量兜底模式把唤醒率拉满
-            BridgeService.setWakeMode(c, BridgeService.WAKE_MODE_ASR);
-            if (sf.isEmpty()) hint = "请填写硅基流动 Key";
+            // 方案 A：智谱负责想(glm-4.7-flash)与看(glm-4v-flash)，兼容仅填硅基的老配置
+            if (!zp.isEmpty() || sf.isEmpty()) {
+                setChatKey(c, zp);
+                setChatBase(c, ZHIPU_BASE);
+                setChatModel(c, FREE_CHAT_MODEL);
+            } else {
+                setChatKey(c, sf);
+                setChatBase(c, FREE_BASE);
+                setChatModel(c, FREE_SF_CHAT_MODEL);
+            }
+            if (!dk.isEmpty() || sf.isEmpty()) {
+                // 阿里云每月1日重置长期免费 paraformer-realtime-v2 + sambert-zhimiao-emo-v1
+                setAsrKey(c, dk);
+                setAsrBase(c, DASH_BASE);
+                setAsrModel(c, FREE_MIX_ASR_MODEL);
+                if (!dk.isEmpty()) {
+                    setTtsMode(c, TTS_MODE_DASHSCOPE);
+                    setTtsModel(c, FREE_MIX_TTS_MODEL);
+                    setTtsVoice(c, "");
+                } else {
+                    setTtsMode(c, TTS_MODE_LOCAL);
+                }
+                if (BridgeService.wakeMode(c) == BridgeService.WAKE_MODE_ASR) {
+                    BridgeService.setWakeMode(c, BridgeService.WAKE_MODE_SMART);
+                }
+            } else {
+                setAsrKey(c, sf);
+                setAsrBase(c, FREE_BASE);
+                setAsrModel(c, FREE_ASR_MODEL);
+                setTtsMode(c, TTS_MODE_LOCAL);
+                BridgeService.setWakeMode(c, BridgeService.WAKE_MODE_ASR);
+            }
+            if (zp.isEmpty() && sf.isEmpty()) {
+                hint = dk.isEmpty() ? "请填写智谱 Key 与阿里云 Key" : "请填写智谱 Key（对话+看图）";
+            } else if (dk.isEmpty() && sf.isEmpty()) {
+                hint = "请填写阿里云 Key（每月免费语音）";
+            }
         }
         BridgeService.prefs(c).edit().putBoolean("plan_paid", paid).apply();
         return hint;
     }
 
-    /** 把一帧 JPEG 交给视觉模型：优先智谱免费 glm-4v-flash，未填且为阿里云方案时复用阿里云 qwen-vl-plus */
+    /** 把一帧 JPEG 交给视觉模型：付费方案走阿里云 qwen-vl-plus，免费方案走智谱免费 glm-4v-flash */
     static void describeImage(Context c, byte[] jpeg, String question, TextCallback cb) {
         final Context app = c.getApplicationContext();
-        String zpKey = zhipuKey(app);
-        String dashVlm = zpKey.isEmpty() ? dashVlmKey(app) : "";
-        final String key = !zpKey.isEmpty() ? zpKey : dashVlm;
-        final String url = !zpKey.isEmpty() ? (zhipuBase(app) + "/chat/completions") : (DASH_BASE + "/chat/completions");
-        final String model = !zpKey.isEmpty() ? vlmModel(app) : DASH_VLM_MODEL;
+        final boolean useDash = planPaid(app) && !dashVlmKey(app).isEmpty();
+        final String key = useDash ? dashVlmKey(app) : zhipuKey(app);
+        final String url = useDash ? (DASH_BASE + "/chat/completions") : (zhipuBase(app) + "/chat/completions");
+        final String model = useDash ? DASH_VLM_MODEL : vlmModel(app);
         if (key.isEmpty()) {
             postError(cb, "还没填智谱或阿里云视觉 Key");
             return;
@@ -450,6 +492,10 @@ final class PhoneVoice {
             postError(cb, "没连电脑，且未填识别 Key");
             return;
         }
+        if (model.toLowerCase(java.util.Locale.US).startsWith("paraformer")) {
+            recognizeParaformer(app, key, model, pcm, sampleRate, cb);
+            return;
+        }
         final byte[] wav = wav(pcm, sampleRate);
         new Thread(() -> {
             final long t0 = System.currentTimeMillis();
@@ -543,6 +589,167 @@ final class PhoneVoice {
         }, "phone-asr").start();
     }
 
+    private static void recognizeParaformer(Context app, String key, String model,
+                                            byte[] pcm, int sampleRate, TextCallback cb) {
+        if (pcm == null || pcm.length == 0) {
+            postError(cb, "没听清");
+            return;
+        }
+        final long t0 = System.currentTimeMillis();
+        final String taskId = java.util.UUID.randomUUID().toString();
+        final java.util.concurrent.atomic.AtomicBoolean finished =
+                new java.util.concurrent.atomic.AtomicBoolean();
+        final java.util.concurrent.atomic.AtomicBoolean audioSent =
+                new java.util.concurrent.atomic.AtomicBoolean();
+        final StringBuffer finalTextBuf = new StringBuffer();
+        final java.util.concurrent.atomic.AtomicReference<String> lastInterim =
+                new java.util.concurrent.atomic.AtomicReference<>("");
+
+        OkHttpClient client = HTTP.newBuilder()
+                .readTimeout(0, TimeUnit.MILLISECONDS)
+                .build();
+        Request req = new Request.Builder()
+                .url("wss://dashscope.aliyuncs.com/api-ws/v1/inference")
+                .header("authorization", "Bearer " + key)
+                .build();
+
+        final java.util.concurrent.atomic.AtomicReference<okhttp3.WebSocket> wsRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final Runnable timeoutTask = () -> {
+            if (finished.compareAndSet(false, true)) {
+                okhttp3.WebSocket active = wsRef.getAndSet(null);
+                if (active != null) active.cancel();
+                cb.onError("识别超时");
+            }
+        };
+        ui.postDelayed(timeoutTask, 15000);
+
+        okhttp3.WebSocket ws = client.newWebSocket(req, new okhttp3.WebSocketListener() {
+            @Override
+            public void onOpen(okhttp3.WebSocket ws, okhttp3.Response response) {
+                try {
+                    JSONObject params = new JSONObject()
+                            .put("format", "pcm")
+                            .put("sample_rate", sampleRate)
+                            .put("punctuation_prediction_enabled", true)
+                            .put("inverse_text_normalization_enabled", true);
+                    JSONObject payload = new JSONObject()
+                            .put("task_group", "audio")
+                            .put("task", "asr")
+                            .put("function", "recognition")
+                            .put("model", model)
+                            .put("parameters", params)
+                            .put("input", new JSONObject());
+                    JSONObject header = new JSONObject()
+                            .put("action", "run-task")
+                            .put("task_id", taskId)
+                            .put("streaming", "duplex");
+                    ws.send(new JSONObject().put("header", header).put("payload", payload).toString());
+                } catch (Exception e) {
+                    if (finished.compareAndSet(false, true)) {
+                        ui.removeCallbacks(timeoutTask);
+                        ws.cancel();
+                        postError(cb, "识别请求构造失败");
+                    }
+                }
+            }
+
+            @Override
+            public void onMessage(okhttp3.WebSocket ws, String message) {
+                try {
+                    JSONObject m = new JSONObject(message);
+                    JSONObject header = m.optJSONObject("header");
+                    String ev = header == null ? "" : header.optString("event");
+                    if ("task-started".equals(ev)) {
+                        if (!audioSent.compareAndSet(false, true)) return;
+                        new Thread(() -> {
+                            try {
+                                int off = 0;
+                                int chunk = 3200;
+                                while (off < pcm.length && !finished.get()) {
+                                    int len = Math.min(chunk, pcm.length - off);
+                                    if (!ws.send(okio.ByteString.of(pcm, off, len))) break;
+                                    off += len;
+                                }
+                                if (!finished.get()) {
+                                    JSONObject fin = new JSONObject()
+                                            .put("header", new JSONObject()
+                                                    .put("action", "finish-task")
+                                                    .put("task_id", taskId)
+                                                    .put("streaming", "duplex"))
+                                            .put("payload", new JSONObject().put("input", new JSONObject()));
+                                    ws.send(fin.toString());
+                                }
+                            } catch (Exception e) {
+                                Log.w(TAG, "paraformer send failed", e);
+                            }
+                        }, "paraformer-send").start();
+                    } else if ("result-generated".equals(ev)) {
+                        JSONObject payload = m.optJSONObject("payload");
+                        JSONObject output = payload == null ? null : payload.optJSONObject("output");
+                        JSONObject sentence = output == null ? null : output.optJSONObject("sentence");
+                        if (sentence != null && !sentence.optBoolean("heartbeat", false)) {
+                            String txt = optNonNullString(sentence, "text").trim();
+                            if (!txt.isEmpty()) {
+                                if (sentence.optBoolean("sentence_end", false)) {
+                                    finalTextBuf.append(txt);
+                                    lastInterim.set("");
+                                } else {
+                                    lastInterim.set(txt);
+                                }
+                            }
+                        }
+                    } else if ("task-finished".equals(ev)) {
+                        if (!finished.compareAndSet(false, true)) return;
+                        ui.removeCallbacks(timeoutTask);
+                        ws.close(1000, "done");
+                        String combined = finalTextBuf.toString();
+                        if (combined.isEmpty()) combined = lastInterim.get();
+                        final String result = cleanAsrText(combined);
+                        Log.i(TAG, "asr took " + (System.currentTimeMillis() - t0) + "ms model=" + model);
+                        ui.post(() -> {
+                            if (result.isEmpty()) cb.onError("没听清");
+                            else cb.onText(result);
+                        });
+                    } else if ("task-failed".equals(ev)) {
+                        if (!finished.compareAndSet(false, true)) return;
+                        ui.removeCallbacks(timeoutTask);
+                        String errMsg = header == null ? "" : header.optString("error_message", "识别失败");
+                        Log.w(TAG, "paraformer task-failed: " + message);
+                        ws.close(1000, "failed");
+                        postError(cb, "识别失败：" + errMsg);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            @Override
+            public void onFailure(okhttp3.WebSocket ws, Throwable t, okhttp3.Response response) {
+                if (!finished.compareAndSet(false, true)) return;
+                ui.removeCallbacks(timeoutTask);
+                int code = response == null ? 0 : response.code();
+                Log.w(TAG, "paraformer ws failed code=" + code, t);
+                postError(cb, code == 401 || code == 403
+                        ? "阿里云 Key 无效或未开通识别权限 (HTTP " + code + ")"
+                        : (code > 0 ? "识别连接失败 (HTTP " + code + ")" : "识别连接失败"));
+            }
+
+            @Override
+            public void onClosed(okhttp3.WebSocket ws, int code, String reason) {
+                if (!finished.compareAndSet(false, true)) return;
+                ui.removeCallbacks(timeoutTask);
+                String combined = finalTextBuf.toString();
+                if (combined.isEmpty()) combined = lastInterim.get();
+                final String result = cleanAsrText(combined);
+                ui.post(() -> {
+                    if (result.isEmpty()) cb.onError("没听清");
+                    else cb.onText(result);
+                });
+            }
+        });
+        wsRef.set(ws);
+    }
+
     private static String optNonNullString(JSONObject obj, String key) {
         if (obj == null || obj.isNull(key)) return "";
         return obj.optString(key, "");
@@ -631,16 +838,20 @@ final class PhoneVoice {
                 body.put("model", model);
                 body.put("temperature", 0.7);
                 body.put("max_tokens", 80);
-                // 仅对明确支持该参数的云平台下发 enable_thinking=false，避免本地 Ollama/标准代理报 400
+                // 仅对明确支持关闭思考链的云平台下发对应开关，保证短句语音低延迟
                 String lowerBase = base.toLowerCase(java.util.Locale.US);
                 String lowerModel = model.toLowerCase(java.util.Locale.US);
-                boolean supportsThinkingFlag = lowerBase.contains("siliconflow")
-                        || lowerBase.contains("dashscope")
-                        || lowerBase.contains("bigmodel");
-                boolean addedThinking = supportsThinkingFlag && (lowerModel.contains("xing4")
-                        || lowerModel.contains("glm-z1") || lowerModel.contains("qwen3"));
-                if (addedThinking) {
+                boolean addedThinking = false;
+                if (lowerBase.contains("bigmodel")) {
+                    if (lowerModel.contains("glm-4.7") || lowerModel.contains("glm-4.6")
+                            || lowerModel.contains("glm-4.5") || lowerModel.contains("glm-z1")) {
+                        body.put("thinking", new JSONObject().put("type", "disabled"));
+                        addedThinking = true;
+                    }
+                } else if ((lowerBase.contains("siliconflow") || lowerBase.contains("dashscope"))
+                        && (lowerModel.contains("xing4") || lowerModel.contains("qwen3"))) {
                     body.put("enable_thinking", false);
+                    addedThinking = true;
                 }
                 JSONArray messages = new JSONArray();
                 String sysPrompt = (allowCamera ? (PERSONA + CAMERA_PROMPT_HINT) : PERSONA)
@@ -661,6 +872,7 @@ final class PhoneVoice {
                 } catch (Exception e) {
                     if (addedThinking && String.valueOf(e.getMessage()).contains("400")) {
                         body.remove("enable_thinking");
+                        body.remove("thinking");
                         out = post(app, base + "/chat/completions", key, body, 60);
                     } else {
                         throw e;
@@ -773,20 +985,154 @@ final class PhoneVoice {
     }
 
     /**
-     * 流式 TTS：cosyvoice* 走 WebSocket（童声更自然），其余走千问 SSE。
+     * 流式 TTS：cosyvoice* 走双向 WebSocket，sambert* 走单向 WebSocket，其余走千问 SSE。
      */
     static void speak(Context c, String text, SpeakListener l) {
-        if (ttsModel(c).toLowerCase(java.util.Locale.ROOT).startsWith("cosyvoice")) {
+        String lower = ttsModel(c).toLowerCase(java.util.Locale.ROOT);
+        if (lower.startsWith("cosyvoice")) {
             speakCosy(c, text, l);
+            return;
+        }
+        if (lower.startsWith("sambert")) {
+            speakSambert(c, text, l);
             return;
         }
         speakQwen(c, text, l);
     }
 
+    /** Sambert v1（每月1日重置3万字/音色长期免费）：单向 run-task 一次性发送文本，流式收 16k PCM */
+    private static void speakSambert(Context c, String text, SpeakListener l) {
+        final Context app = c.getApplicationContext();
+        final String key = dashAuthKey(app);
+        if (key.isEmpty()) {
+            ui.post(() -> l.onError("未配置阿里云 Key"));
+            return;
+        }
+        final String model = ttsModel(app);
+        final int rate = 16000;
+        final String taskId = java.util.UUID.randomUUID().toString();
+        final java.util.concurrent.atomic.AtomicBoolean started =
+                new java.util.concurrent.atomic.AtomicBoolean();
+        final java.util.concurrent.atomic.AtomicBoolean finished =
+                new java.util.concurrent.atomic.AtomicBoolean();
+
+        OkHttpClient client = HTTP.newBuilder()
+                .readTimeout(0, TimeUnit.MILLISECONDS)
+                .build();
+        Request req = new Request.Builder()
+                .url("wss://dashscope.aliyuncs.com/api-ws/v1/inference")
+                .header("authorization", "Bearer " + key)
+                .build();
+
+        final java.util.concurrent.atomic.AtomicReference<okhttp3.WebSocket> wsRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final Runnable timeoutTask = () -> {
+            if (finished.compareAndSet(false, true)) {
+                okhttp3.WebSocket active = wsRef.getAndSet(null);
+                if (active != null) active.cancel();
+                l.onError("流式 TTS 超时");
+            }
+        };
+        ui.postDelayed(timeoutTask, 30000);
+
+        okhttp3.WebSocket ws = client.newWebSocket(req, new okhttp3.WebSocketListener() {
+            @Override
+            public void onOpen(okhttp3.WebSocket ws, okhttp3.Response response) {
+                try {
+                    JSONObject params = new JSONObject()
+                            .put("text_type", "PlainText")
+                            .put("format", "pcm")
+                            .put("sample_rate", rate)
+                            .put("volume", 60)
+                            .put("rate", 1.0)
+                            .put("pitch", 1.0);
+                    JSONObject payload = new JSONObject()
+                            .put("task_group", "audio")
+                            .put("task", "tts")
+                            .put("function", "SpeechSynthesizer")
+                            .put("model", model)
+                            .put("parameters", params)
+                            .put("input", new JSONObject().put("text", text));
+                    JSONObject header = new JSONObject()
+                            .put("action", "run-task")
+                            .put("task_id", taskId)
+                            .put("streaming", "out");
+                    ws.send(new JSONObject().put("header", header).put("payload", payload).toString());
+                    Log.i(TAG, "sambert run-task model=" + model);
+                } catch (Exception e) {
+                    if (finished.compareAndSet(false, true)) {
+                        ui.removeCallbacks(timeoutTask);
+                        ws.cancel();
+                        ui.post(() -> l.onError("Sambert 请求构造失败"));
+                    }
+                }
+            }
+
+            @Override
+            public void onMessage(okhttp3.WebSocket ws, String message) {
+                try {
+                    JSONObject m = new JSONObject(message);
+                    JSONObject header = m.optJSONObject("header");
+                    String ev = header == null ? "" : header.optString("event");
+                    if ("task-finished".equals(ev)) {
+                        if (!finished.compareAndSet(false, true)) return;
+                        ui.removeCallbacks(timeoutTask);
+                        ws.close(1000, "done");
+                        if (!started.get()) {
+                            ui.post(() -> l.onError("Sambert 没有返回音频"));
+                        } else {
+                            ui.post(l::onDone);
+                        }
+                    } else if ("task-failed".equals(ev)) {
+                        if (!finished.compareAndSet(false, true)) return;
+                        ui.removeCallbacks(timeoutTask);
+                        String errMsg = header == null ? "" : header.optString("error_message", "Sambert 合成失败");
+                        Log.w(TAG, "sambert task-failed: " + message);
+                        ws.close(1000, "failed");
+                        ui.post(() -> l.onError(errMsg.isEmpty() ? "Sambert 合成失败" : errMsg));
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            @Override
+            public void onMessage(okhttp3.WebSocket ws, okio.ByteString bytes) {
+                if (finished.get()) return;
+                final byte[] pcm = bytes.toByteArray();
+                if (!started.getAndSet(true)) {
+                    Log.i(TAG, "sambert first audio chunk " + pcm.length + "B");
+                    ui.post(() -> l.onStart(rate));
+                }
+                ui.post(() -> l.onPcm(pcm));
+            }
+
+            @Override
+            public void onFailure(okhttp3.WebSocket ws, Throwable t, okhttp3.Response response) {
+                if (!finished.compareAndSet(false, true)) return;
+                ui.removeCallbacks(timeoutTask);
+                int code = response == null ? 0 : response.code();
+                Log.w(TAG, "sambert failed code=" + code, t);
+                String msg = code == 401 || code == 403
+                        ? "阿里云 Key 无效或额度已停 (HTTP " + code + ")"
+                        : (code > 0 ? "Sambert 连接失败 (HTTP " + code + ")" : "Sambert 连接失败");
+                ui.post(() -> l.onError(msg));
+            }
+
+            @Override
+            public void onClosed(okhttp3.WebSocket ws, int code, String reason) {
+                if (!finished.compareAndSet(false, true)) return;
+                ui.removeCallbacks(timeoutTask);
+                if (started.get()) ui.post(l::onDone);
+                else ui.post(() -> l.onError("Sambert 已关闭"));
+            }
+        });
+        wsRef.set(ws);
+    }
+
     /** CosyVoice v3：音频是二进制帧，控制信息是 JSON 文本帧 */
     private static void speakCosy(Context c, String text, SpeakListener l) {
         final Context app = c.getApplicationContext();
-        final String key = asrKey(app);
+        final String key = dashAuthKey(app);
         if (key.isEmpty()) {
             ui.post(() -> l.onError("未配置千问 Key"));
             return;
@@ -931,17 +1277,18 @@ final class PhoneVoice {
      */
     private static void speakQwen(Context c, String text, SpeakListener l) {
         final Context app = c.getApplicationContext();
-        final String key = asrKey(app);
+        final String key = dashAuthKey(app);
         if (key.isEmpty()) {
             ui.post(() -> l.onError("未配置千问 Key"));
             return;
         }
+        final String model = ttsModel(app);
         final String voice = ttsVoice(app);
         new Thread(() -> {
             OkHttpClient client = HTTP.newBuilder().readTimeout(60, TimeUnit.SECONDS).build();
             try {
                 JSONObject body = new JSONObject();
-                body.put("model", "qwen3-tts-flash");
+                body.put("model", model.isEmpty() ? "qwen3-tts-flash" : model);
                 body.put("input", new JSONObject()
                         .put("text", text)
                         .put("voice", voice)

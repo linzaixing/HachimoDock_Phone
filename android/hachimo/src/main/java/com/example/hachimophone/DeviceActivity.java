@@ -1515,8 +1515,9 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
                 || wake.isMuted() || cue != null) return;
         if (recorder.isActive() || voiceBusy || awaitingText) return;
         int mode = BridgeService.wakeMode(this);
-        // 付费方案下即使用户选过全量兜底，也走智能分级防止长闲聊白烧付费 ASR
-        if (PhoneVoice.planPaid(this) && mode == BridgeService.WAKE_MODE_ASR) {
+        // 走阿里云识别（付费或免费 paraformer 10h/月）时均走智能分级防止长闲聊白耗额度
+        if ((PhoneVoice.planPaid(this) || PhoneVoice.asrBase(this).contains("dashscope"))
+                && mode == BridgeService.WAKE_MODE_ASR) {
             mode = BridgeService.WAKE_MODE_SMART;
         }
         final int effectiveMode = mode;
