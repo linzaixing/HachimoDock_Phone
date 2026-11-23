@@ -1463,6 +1463,11 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
     }
 
     private String wakeHint() {
+        if (!AppState.get().snapshot().connected && XiaozhiClient.enabled(this)) {
+            return XiaozhiClient.activated(this)
+                    ? "小智模式已就绪，叫「哈基米」就能聊"
+                    : "小智模式待激活：请在设置页点「获取激活码」";
+        }
         boolean kws = KwsWake.ready();
         int mode = BridgeService.wakeMode(this);
         boolean ready = AppState.get().snapshot().connected || PhoneVoice.asrReady(this);

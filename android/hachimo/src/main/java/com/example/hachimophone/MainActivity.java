@@ -41,6 +41,10 @@ public final class MainActivity extends Activity implements AppState.Listener {
     private TextView status;
     private TextView overlayPill;
     private android.media.MediaPlayer samplePlayer;
+    private android.media.AudioTrack sampleTrack;
+    private java.util.concurrent.ExecutorService sampleAudioExec;
+    private android.speech.tts.TextToSpeech previewTts;
+    private long previewSeq;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -150,13 +154,13 @@ public final class MainActivity extends Activity implements AppState.Listener {
         freePlanTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         final TextView paidPlanTab = pillButton("付费(阿里)", Color.TRANSPARENT, TEXT_SECONDARY);
         paidPlanTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        final TextView xiaozhiTab = pillButton("小智云(免Key)", Color.TRANSPARENT, TEXT_SECONDARY);
+        final TextView xiaozhiTab = pillButton("小智模式", Color.TRANSPARENT, TEXT_SECONDARY);
         xiaozhiTab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         addWeight(planSegment, freePlanTab, 1f, 4);
         addWeight(planSegment, paidPlanTab, 1f, 4);
         addWeight(planSegment, xiaozhiTab, 1.05f, 0);
 
-        // 常用 Key（免费：智谱负责想 glm-4.7-flash 和看 glm-4v-flash + 阿里云每月免费语音/或本机童声；付费：阿里云 1 Key；小智云：免Key）
+        // 常用 Key（免费：智谱负责想 glm-4-flash 和看 glm-4v-flash + 阿里云每月免费语音/或本机童声；付费：阿里云 1 Key；小智云：免Key）
         final EditText zhipuKeyInput = styledInput(
                 "智谱 Key（永久免费 · 对话+看图共用）", PhoneVoice.zhipuKey(this), true);
         final EditText freeDashKeyInput = styledInput(
@@ -168,13 +172,13 @@ public final class MainActivity extends Activity implements AppState.Listener {
 
         final LinearLayout freeKeysBox = new LinearLayout(this);
         freeKeysBox.setOrientation(LinearLayout.VERTICAL);
-        addLabeledField(freeKeysBox, "智谱 Key（永久免费 · 对话 glm-4.7-flash + 看图）", zhipuKeyInput);
+        addLabeledField(freeKeysBox, "智谱 Key（永久免费 · 对话 glm-4-flash + 看图）", zhipuKeyInput);
         addLabeledField(freeKeysBox, "阿里云 Key（每月重置免费识别+语音 · 留空用本机童声）", freeDashKeyInput);
         voiceCard.addView(freeKeysBox);
 
         final LinearLayout paidKeysBox = new LinearLayout(this);
         paidKeysBox.setOrientation(LinearLayout.VERTICAL);
-        addLabeledField(paidKeysBox, "阿里云 DashScope Key（识别 + DeepSeek-V3 + CosyVoice + 看图）", dashKeyInput);
+        addLabeledField(paidKeysBox, "阿里云 DashScope Key（识别 + qwen3.7-flash 对话/看图 + 语音）", dashKeyInput);
         voiceCard.addView(paidKeysBox);
 
         final LinearLayout xiaozhiBox = new LinearLayout(this);
@@ -253,6 +257,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
         // 语音与唤醒快捷控制
         final LinearLayout ttsRow = rowLayout();
         final TextView ttsModeBtn = pillButton("", BG_PILL, TEXT_PRIMARY);
+        final TextView sidBtn = pillButton("", BG_PILL, TEXT_PRIMARY);
         final Runnable[] refreshTtsBtn = new Runnable[1];
         refreshTtsBtn[0] = () -> {
             String m = PhoneVoice.ttsMode(this);
@@ -262,6 +267,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
                     : (PhoneVoice.TTS_MODE_OPENAI.equals(m) ? "发音：OpenAI/本地"
                     : (PhoneVoice.TTS_MODE_DASHSCOPE.equals(m) ? dashLabel : "发音：0元系统TTS"));
             ttsModeBtn.setText(label);
+            sidBtn.setVisibility(PhoneVoice.TTS_MODE_LOCAL.equals(m) ? View.VISIBLE : View.GONE);
         };
         ttsModeBtn.setOnClickListener(v -> {
             String cur = PhoneVoice.ttsMode(this);
@@ -279,10 +285,8 @@ public final class MainActivity extends Activity implements AppState.Listener {
             PhoneVoice.setTtsMode(this, next);
             refreshTtsBtn[0].run();
         });
-        refreshTtsBtn[0].run();
         addWeight(ttsRow, ttsModeBtn, 1.3f, 6);
 
-        final TextView sidBtn = pillButton("", BG_PILL, TEXT_PRIMARY);
         final Runnable[] refreshSid = new Runnable[1];
         refreshSid[0] = () -> sidBtn.setText("童声 #" + LocalTts.speakerId(this));
         sidBtn.setOnClickListener(v -> {
@@ -291,9 +295,14 @@ public final class MainActivity extends Activity implements AppState.Listener {
         });
         refreshSid[0].run();
         addWeight(ttsRow, sidBtn, 0.9f, 6);
+        refreshTtsBtn[0].run();
 
         TextView previewSidBtn = pillButton("试听", 0xFF164E63, 0xFF67E8F9);
-        previewSidBtn.setOnClickListener(v -> playLocalSample(LocalTts.speakerId(this)));
+        previewSidBtn.setOnClickListener(v -> {
+            boolean paid = PhoneVoice.planPaid(this);
+            String dk = (paid ? dashKeyInput : freeDashKeyInput).getText().toString().trim();
+            previewVoice(paid, dk);
+        });
         addWeight(ttsRow, previewSidBtn, 0.6f, 0);
         voiceCard.addView(ttsRow);
 
@@ -668,6 +677,120 @@ public final class MainActivity extends Activity implements AppState.Listener {
         }
     }
 
+    private void previewVoice(boolean paid, String dkInput) {
+        String mode = PhoneVoice.ttsMode(this);
+        if (PhoneVoice.TTS_MODE_LOCAL.equals(mode)) {
+            playLocalSample(LocalTts.speakerId(this));
+            return;
+        }
+        stopSamplePlayer();
+        final long seq = ++previewSeq;
+        final String sampleText = "你好呀，我是哈基米，很高兴认识你";
+        if (PhoneVoice.TTS_MODE_DASHSCOPE.equals(mode)) {
+            if (!dkInput.isEmpty()) PhoneVoice.setDashKey(this, dkInput);
+            if (PhoneVoice.dashKey(this).isEmpty()) {
+                Toast.makeText(this, "请先填写阿里云 Key", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (paid) {
+                PhoneVoice.setTtsModel(this, PhoneVoice.DASH_TTS_MODEL);
+                PhoneVoice.setTtsVoice(this, PhoneVoice.DASH_TTS_VOICE);
+            } else {
+                PhoneVoice.setTtsModel(this, PhoneVoice.FREE_MIX_TTS_MODEL);
+                PhoneVoice.setTtsVoice(this, "");
+            }
+            Toast.makeText(this, "正在连接云端试听…", Toast.LENGTH_SHORT).show();
+            PhoneVoice.speak(this, sampleText, new PhoneVoice.SpeakListener() {
+                @Override
+                public void onStart(int sampleRate) {
+                    if (seq != previewSeq) return;
+                    try {
+                        int min = android.media.AudioTrack.getMinBufferSize(sampleRate,
+                                android.media.AudioFormat.CHANNEL_OUT_MONO,
+                                android.media.AudioFormat.ENCODING_PCM_16BIT);
+                        sampleTrack = new android.media.AudioTrack(
+                                android.media.AudioManager.STREAM_MUSIC, sampleRate,
+                                android.media.AudioFormat.CHANNEL_OUT_MONO,
+                                android.media.AudioFormat.ENCODING_PCM_16BIT,
+                                Math.max(min * 4, 16384),
+                                android.media.AudioTrack.MODE_STREAM);
+                        sampleTrack.play();
+                        sampleAudioExec = java.util.concurrent.Executors.newSingleThreadExecutor();
+                    } catch (Exception e) {
+                        Toast.makeText(MainActivity.this, "播放器启动失败：" + e.getMessage(),
+                                Toast.LENGTH_SHORT).show();
+                    }
+                }
+
+                @Override
+                public void onPcm(byte[] pcm) {
+                    if (seq != previewSeq) return;
+                    final android.media.AudioTrack t = sampleTrack;
+                    final java.util.concurrent.ExecutorService ex = sampleAudioExec;
+                    if (t == null || ex == null || pcm.length == 0) return;
+                    try {
+                        ex.submit(() -> {
+                            try {
+                                t.write(pcm, 0, pcm.length);
+                            } catch (Exception ignored) {
+                            }
+                        });
+                    } catch (Exception ignored) {
+                    }
+                }
+
+                @Override
+                public void onDone() {
+                    if (seq != previewSeq) return;
+                    final java.util.concurrent.ExecutorService ex = sampleAudioExec;
+                    if (ex != null) {
+                        ex.submit(() -> {
+                            try {
+                                Thread.sleep(250);
+                            } catch (InterruptedException ignored) {
+                            }
+                            runOnUiThread(() -> {
+                                if (seq == previewSeq) stopSampleAudioTrack();
+                            });
+                        });
+                    }
+                }
+
+                @Override
+                public void onError(String message) {
+                    if (seq != previewSeq) return;
+                    stopSampleAudioTrack();
+                    Toast.makeText(MainActivity.this, "云端试听失败：" + message, Toast.LENGTH_LONG).show();
+                }
+            });
+            return;
+        }
+        // 0元系统 TTS 试听
+        if (previewTts == null) {
+            previewTts = new android.speech.tts.TextToSpeech(getApplicationContext(), status -> {
+                if (status == android.speech.tts.TextToSpeech.SUCCESS && seq == previewSeq) {
+                    speakPreviewSystem(sampleText);
+                } else if (status != android.speech.tts.TextToSpeech.SUCCESS) {
+                    Toast.makeText(MainActivity.this, "系统语音初始化失败", Toast.LENGTH_SHORT).show();
+                }
+            });
+        } else {
+            speakPreviewSystem(sampleText);
+        }
+    }
+
+    private void speakPreviewSystem(String text) {
+        if (previewTts == null) return;
+        try {
+            previewTts.setLanguage(java.util.Locale.CHINA);
+            previewTts.setPitch(1.15f);
+            previewTts.setSpeechRate(1.02f);
+            previewTts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "preview");
+        } catch (Exception e) {
+            Toast.makeText(this, "系统试听失败：" + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void playLocalSample(int sid) {
         stopSamplePlayer();
         try {
@@ -691,7 +814,35 @@ public final class MainActivity extends Activity implements AppState.Listener {
         }
     }
 
+    private void stopSampleAudioTrack() {
+        java.util.concurrent.ExecutorService ex = sampleAudioExec;
+        sampleAudioExec = null;
+        if (ex != null) ex.shutdownNow();
+        android.media.AudioTrack t = sampleTrack;
+        sampleTrack = null;
+        if (t != null) {
+            try {
+                t.pause();
+                t.flush();
+                t.stop();
+            } catch (Exception ignored) {
+            }
+            try {
+                t.release();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
     private void stopSamplePlayer() {
+        previewSeq++;
+        stopSampleAudioTrack();
+        if (previewTts != null) {
+            try {
+                previewTts.stop();
+            } catch (Exception ignored) {
+            }
+        }
         android.media.MediaPlayer mp = samplePlayer;
         samplePlayer = null;
         if (mp != null) {
@@ -709,6 +860,13 @@ public final class MainActivity extends Activity implements AppState.Listener {
     @Override
     protected void onDestroy() {
         stopSamplePlayer();
+        if (previewTts != null) {
+            try {
+                previewTts.shutdown();
+            } catch (Exception ignored) {
+            }
+            previewTts = null;
+        }
         AppState.get().remove(this);
         super.onDestroy();
     }

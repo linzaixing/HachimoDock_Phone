@@ -113,8 +113,19 @@ final class PhoneVoice {
 
     static String chatModel(Context c) {
         String v = BridgeService.prefs(c).getString("chat_model", "");
-        // 默认用智谱永久免费对话模型（glm-4.7-flash，关闭思考链保证语音低延迟）
-        return v == null || v.trim().isEmpty() ? FREE_CHAT_MODEL : v.trim();
+        if (v == null || v.trim().isEmpty()) return FREE_CHAT_MODEL;
+        String m = v.trim();
+        // 平滑迁移已下线/限流拥挤的旧预设模型，防止升级后直接报 404 或 429
+        if ("glm-4.7-flash".equalsIgnoreCase(m) && chatBase(c).contains("bigmodel")) {
+            return FREE_CHAT_MODEL;
+        }
+        if ("deepseek-v3".equalsIgnoreCase(m) && chatBase(c).contains("dashscope")) {
+            return DASH_CHAT_MODEL;
+        }
+        if ("deepseek-v4.1-flash-1017".equalsIgnoreCase(m) && chatBase(c).contains("dashscope")) {
+            return DASH_CHAT_MODEL;
+        }
+        return m;
     }
 
     static void setChatModel(Context c, String v) {
@@ -229,18 +240,18 @@ final class PhoneVoice {
     static final String ZHIPU_BASE = "https://open.bigmodel.cn/api/paas/v4";
     static final String FREE_BASE = "https://api.siliconflow.cn/v1";
     static final String FREE_ASR_MODEL = "XingChenAGI/XingChenASR-V3.2-Ultra";
-    static final String FREE_CHAT_MODEL = "glm-4.7-flash";
+    static final String FREE_CHAT_MODEL = "glm-4-flash-250414";
     static final String FREE_SF_CHAT_MODEL = "Qwen/Qwen3-8B";
     /** 免费高音质语音：阿里云每月1日重置长期免费识别(10h/月) + Sambert语音(3万字/音色/月) */
     static final String FREE_MIX_ASR_MODEL = "paraformer-realtime-v2";
     static final String FREE_MIX_TTS_MODEL = "sambert-zhimiao-emo-v1";
     static final String PAID_BASE = "https://api.deepseek.com/v1";
     static final String PAID_CHAT_MODEL = "deepseek-chat";
-    /** 付费方案：一个阿里云 DashScope Key 跑通全部（识别 + DeepSeek-V3 对话 + CosyVoice + 看图） */
+    /** 付费方案：一个阿里云 DashScope Key 跑通全部（极简低价 qwen3.7-flash 对话+看图 0.2/0.8元/M + 语音） */
     static final String DASH_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1";
     static final String DASH_ASR_MODEL = "qwen3-asr-flash";
-    static final String DASH_CHAT_MODEL = "deepseek-v3";
-    static final String DASH_VLM_MODEL = "qwen-vl-plus";
+    static final String DASH_CHAT_MODEL = "qwen3.7-flash";
+    static final String DASH_VLM_MODEL = "qwen3.7-flash";
     static final String DASH_TTS_MODEL = "cosyvoice-v3-flash";
     static final String DASH_TTS_VOICE = "longjielidou_v3";
 
@@ -435,7 +446,49 @@ final class PhoneVoice {
                 messages.put(new JSONObject().put("role", "user").put("content", content));
                 body.put("messages", messages);
 
-                JSONObject out = post(app, url, key, body, 60);
+                final java.util.List<String> models = new java.util.ArrayList<>();
+                models.add(model);
+                String lowerVlmUrl = url.toLowerCase(java.util.Locale.US);
+                if (lowerVlmUrl.contains("dashscope")) {
+                    for (String fb : new String[]{DASH_VLM_MODEL, "qwen3.5-flash", "qwen3.8-flash"}) {
+                        if (!models.contains(fb)) models.add(fb);
+                    }
+                } else if (lowerVlmUrl.contains("bigmodel")) {
+                    for (String fb : new String[]{"glm-4v-flash", "glm-4.6v-flash"}) {
+                        if (!models.contains(fb)) models.add(fb);
+                    }
+                }
+                JSONObject out = null;
+                Exception lastErr = null;
+                for (int i = 0; i < models.size(); i++) {
+                    String curModel = models.get(i);
+                    body.put("model", curModel);
+                    if (lowerVlmUrl.contains("dashscope")) {
+                        body.put("enable_thinking", false);
+                    }
+                    try {
+                        out = post(app, url, key, body, 60);
+                        break;
+                    } catch (Exception e) {
+                        if (body.has("enable_thinking") && String.valueOf(e.getMessage()).contains("400")) {
+                            body.remove("enable_thinking");
+                            try {
+                                out = post(app, url, key, body, 60);
+                                break;
+                            } catch (Exception e2) {
+                                e = e2;
+                            }
+                        }
+                        lastErr = e;
+                        if (i + 1 < models.size() && isRetryableModelErr(e)) {
+                            Log.w(TAG, "vlm fallback from " + curModel + ": " + e.getMessage());
+                            try { Thread.sleep(250); } catch (InterruptedException ignored) {}
+                            continue;
+                        }
+                        throw e;
+                    }
+                }
+                if (out == null && lastErr != null) throw lastErr;
                 if (out == null) {
                     Log.w(TAG, "vlm fail: network null");
                     postError(cb, "看图失败：网络错误");
@@ -539,7 +592,18 @@ final class PhoneVoice {
                     messages.put(new JSONObject().put("role", "user").put("content", content));
                     body.put("messages", messages);
 
-                    JSONObject out = post(app, base + "/chat/completions", key, body, 12);
+                    JSONObject out;
+                    try {
+                        out = post(app, base + "/chat/completions", key, body, 12);
+                    } catch (Exception e) {
+                        String em = String.valueOf(e.getMessage());
+                        if (em.contains("HTTP 403") || em.contains("HTTP 404") || em.contains("HTTP 400")) {
+                            Log.w(TAG, "dash asr fallback to paraformer from " + model + ": " + em);
+                            recognizeParaformer(app, key, FREE_MIX_ASR_MODEL, pcm, sampleRate, cb);
+                            return;
+                        }
+                        throw e;
+                    }
                     if (out == null) {
                         Thread.sleep(250);
                         out = post(app, base + "/chat/completions", key, body, 12);
@@ -854,26 +918,11 @@ final class PhoneVoice {
         }
         new Thread(() -> {
             try {
-                JSONObject body = new JSONObject();
                 String model = chatModel(app);
-                body.put("model", model);
+                String lowerBase = base.toLowerCase(java.util.Locale.US);
+                JSONObject body = new JSONObject();
                 body.put("temperature", 0.7);
                 body.put("max_tokens", 80);
-                // 仅对明确支持关闭思考链的云平台下发对应开关，保证短句语音低延迟
-                String lowerBase = base.toLowerCase(java.util.Locale.US);
-                String lowerModel = model.toLowerCase(java.util.Locale.US);
-                boolean addedThinking = false;
-                if (lowerBase.contains("bigmodel")) {
-                    if (lowerModel.contains("glm-4.7") || lowerModel.contains("glm-4.6")
-                            || lowerModel.contains("glm-4.5") || lowerModel.contains("glm-z1")) {
-                        body.put("thinking", new JSONObject().put("type", "disabled"));
-                        addedThinking = true;
-                    }
-                } else if ((lowerBase.contains("siliconflow") || lowerBase.contains("dashscope"))
-                        && (lowerModel.contains("xing4") || lowerModel.contains("qwen3"))) {
-                    body.put("enable_thinking", false);
-                    addedThinking = true;
-                }
                 JSONArray messages = new JSONArray();
                 String sysPrompt = (allowCamera ? (PERSONA + CAMERA_PROMPT_HINT) : PERSONA)
                         + "\n当前时间（手机本机时钟，问日期/星期/几点一律以此为准）：" + nowText();
@@ -887,18 +936,63 @@ final class PhoneVoice {
                 messages.put(new JSONObject().put("role", "user").put("content", text));
                 body.put("messages", messages);
 
-                JSONObject out;
-                try {
-                    out = post(app, base + "/chat/completions", key, body, 60);
-                } catch (Exception e) {
-                    if (addedThinking && String.valueOf(e.getMessage()).contains("400")) {
-                        body.remove("enable_thinking");
-                        body.remove("thinking");
+                final java.util.List<String> candidates = new java.util.ArrayList<>();
+                candidates.add(model);
+                if (lowerBase.contains("bigmodel")) {
+                    for (String fb : new String[]{"glm-4-flash-250414", "glm-4-flash", "glm-z1-flash", "glm-4.7-flash"}) {
+                        if (!candidates.contains(fb)) candidates.add(fb);
+                    }
+                } else if (lowerBase.contains("dashscope")) {
+                    for (String fb : new String[]{"qwen3.7-flash", "qwen-flash", "qwen3.5-flash", "qwen3.8-flash"}) {
+                        if (!candidates.contains(fb)) candidates.add(fb);
+                    }
+                }
+
+                JSONObject out = null;
+                Exception lastErr = null;
+                for (int i = 0; i < candidates.size(); i++) {
+                    String curModel = candidates.get(i);
+                    String lowerModel = curModel.toLowerCase(java.util.Locale.US);
+                    body.put("model", curModel);
+                    body.remove("thinking");
+                    body.remove("enable_thinking");
+                    boolean addedThinking = false;
+                    if (lowerBase.contains("bigmodel")) {
+                        if (lowerModel.contains("glm-4.7") || lowerModel.contains("glm-4.6")
+                                || lowerModel.contains("glm-4.5") || lowerModel.contains("glm-z1")) {
+                            body.put("thinking", new JSONObject().put("type", "disabled"));
+                            addedThinking = true;
+                        }
+                    } else if ((lowerBase.contains("siliconflow") || lowerBase.contains("dashscope"))
+                            && (lowerModel.contains("xing4") || lowerModel.contains("qwen3")
+                            || lowerModel.contains("qwen4") || lowerModel.contains("deepseek-v4"))) {
+                        body.put("enable_thinking", false);
+                        addedThinking = true;
+                    }
+                    try {
                         out = post(app, base + "/chat/completions", key, body, 60);
-                    } else {
+                        break;
+                    } catch (Exception e) {
+                        if (addedThinking && String.valueOf(e.getMessage()).contains("400")) {
+                            body.remove("enable_thinking");
+                            body.remove("thinking");
+                            try {
+                                out = post(app, base + "/chat/completions", key, body, 60);
+                                break;
+                            } catch (Exception e2) {
+                                e = e2;
+                            }
+                        }
+                        lastErr = e;
+                        if (i + 1 < candidates.size() && isRetryableModelErr(e)) {
+                            Log.w(TAG, "chat fallback from " + curModel + ": " + e.getMessage());
+                            try { Thread.sleep(250); } catch (InterruptedException ignored) {}
+                            continue;
+                        }
                         throw e;
                     }
                 }
+                if (out == null && lastErr != null) throw lastErr;
                 if (out == null) {
                     postError(cb, "对话失败：网络错误");
                     return;
@@ -1023,13 +1117,18 @@ final class PhoneVoice {
 
     /** Sambert v1（每月1日重置3万字/音色长期免费）：单向 run-task 一次性发送文本，流式收 16k PCM */
     private static void speakSambert(Context c, String text, SpeakListener l) {
+        speakSambertModel(c, ttsModel(c), text, l);
+    }
+
+    private static void speakSambertModel(Context c, String overrideModel, String text, SpeakListener l) {
         final Context app = c.getApplicationContext();
         final String key = dashAuthKey(app);
         if (key.isEmpty()) {
             ui.post(() -> l.onError("未配置阿里云 Key"));
             return;
         }
-        final String model = ttsModel(app);
+        final String model = (overrideModel == null || overrideModel.trim().isEmpty())
+                ? FREE_MIX_TTS_MODEL : overrideModel.trim();
         final int rate = 16000;
         final String taskId = java.util.UUID.randomUUID().toString();
         final java.util.concurrent.atomic.AtomicBoolean started =
@@ -1255,7 +1354,12 @@ final class PhoneVoice {
                         ui.removeCallbacks(timeoutTask);
                         Log.w(TAG, "cosy task-failed: " + message);
                         ws.close(1000, "failed");
-                        ui.post(() -> l.onError("CosyVoice 合成失败"));
+                        if (!started.get()) {
+                            // CosyVoice 停服/无额度时自动切到每月重置免费的 Sambert
+                            speakSambertModel(app, FREE_MIX_TTS_MODEL, text, l);
+                        } else {
+                            ui.post(() -> l.onError("CosyVoice 合成失败"));
+                        }
                     }
                 } catch (Exception ignored) {
                     /* 不是 JSON 就忽略 */
@@ -1408,6 +1512,15 @@ final class PhoneVoice {
             throw new Exception("HTTP " + res.code() + " " + msg);
         }
         return new JSONObject(text);
+    }
+
+    private static boolean isRetryableModelErr(Exception e) {
+        String msg = String.valueOf(e == null ? "" : e.getMessage());
+        return msg.contains("HTTP 429")
+                || msg.contains("HTTP 404")
+                || msg.contains("HTTP 403")
+                || msg.contains("HTTP 503")
+                || msg.contains("HTTP 502");
     }
 
     private static void postError(TextCallback cb, String message) {
