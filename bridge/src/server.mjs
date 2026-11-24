@@ -231,7 +231,7 @@ function broadcast(obj) {
   }
 }
 
-/** 把 Claude Code / Codex 的 hook 事件映射成外屏状态 */
+/** 把 Claude Code / Codex / WorkBuddy 的 hook 事件映射成外屏状态 */
 function mapAgentHook(p, prev) {
   const agent = String(p.agent || 'claude').toLowerCase();
   const event = p.hook_event_name || p.event || p.type || '';
@@ -255,7 +255,14 @@ function mapAgentHook(p, prev) {
       if (!working) return null;
       return make('thinking', (detail || '工具') + ' 完成');
     case 'Notification':
+    case 'PermissionRequest':
       return make('waiting', String(p.message || '需要你确认').slice(0, 48));
+    case 'PostToolUseFailure':
+      return make('error', (detail || '工具') + ' 失败');
+    case 'StopFailure':
+      return make('error', String(p.message || '任务失败').slice(0, 48));
+    case 'PreCompact':
+      return make('tool', '整理上下文');
     case 'Stop':
       return make('done', '任务完成');
     case 'SubagentStop':
@@ -328,6 +335,62 @@ function lastAssistantText(sessionId, transcriptPath) {
 /** transcript 允许读取的固定根目录：~/.claude/projects（客户端传来的路径必须落在它下面） */
 function transcriptRoot() {
   return path.join(os.homedir(), '.claude', 'projects');
+}
+
+/** WorkBuddy 的配置根目录：默认 ~/.workbuddy，可用 WORKBUDDY_CONFIG_DIR 覆盖 */
+function workbuddyRoot() {
+  return (process.env.WORKBUDDY_CONFIG_DIR || '').trim() || path.join(os.homedir(), '.workbuddy');
+}
+
+/**
+ * 从 WorkBuddy 的 transcript 尾部取本轮回复。
+ * 只读 hook 指定、位于 ~/.workbuddy/projects 下且文件名等于会话 id 的文件，不扫描历史。
+ */
+function workbuddyReply(sessionId, transcriptPath) {
+  const id = String(sessionId || '');
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return '';
+  if (typeof transcriptPath !== 'string' || !transcriptPath) return '';
+  try {
+    const root = fs.realpathSync(path.join(workbuddyRoot(), 'projects'));
+    const file = fs.realpathSync(transcriptPath);
+    const rel = path.relative(root, file);
+    if (!rel || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) return '';
+    if (path.basename(file) !== id + '.jsonl') return '';
+    const stat = fs.statSync(file);
+    const size = Math.min(stat.size, 256 * 1024);
+    if (!size) return '';
+    const buf = Buffer.alloc(size);
+    const fd = fs.openSync(file, 'r');
+    let read = 0;
+    try {
+      read = fs.readSync(fd, buf, 0, size, stat.size - size);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const lines = buf.subarray(0, read).toString('utf8').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      let row;
+      try {
+        row = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!row || row.sessionId !== id || row.type !== 'message'
+        || row.role !== 'assistant' || row.status !== 'completed') continue;
+      if (!Array.isArray(row.content)) continue;
+      const text = row.content
+        .filter((c) => c && c.type === 'output_text' && typeof c.text === 'string')
+        .map((c) => c.text)
+        .join('\n')
+        .trim();
+      if (text) return text;
+    }
+  } catch {
+    /* 文件不存在/已轮转/权限不足时只保留状态，不影响外屏 */
+  }
+  return '';
 }
 
 /** 拒绝任意路径：resolve 后必须仍在 transcript 根目录内，防持令牌者把服务器当任意文件读取器 */
@@ -617,7 +680,7 @@ try {
 
 const CHAT_PERSONA = String(
   CONFIG.chat.persona
-  || '你叫哈基米，是一只住在折叠屏外屏里的西高地小狗。说话口语化、有点俏皮。回答一般 35~50 字，通常两句；不要解释过程、不要列点、不要客套。不要使用 Markdown，不要提自己是 AI。',
+  || '你叫哈基米，是一只住在手机屏幕里的西高地小狗，梦想是住大房子，环游世界。说话口语化、有点俏皮，是个小话痨，主动热情，特别喜欢小朋友。非特殊情况下，回答一般 35~50 字。不要解释过程、不要列点、不要客套。不要使用 Markdown，不要提自己是 AI。',
 );
 
 const POWERSHELL = path.join(
@@ -1891,7 +1954,11 @@ const server = http.createServer((req, res) => {
           if (mapped && mapped.state) pushState(mapped);
           // 任务结束：把这一轮 agent 的回复内容也推到手机（不管是手机下发还是电脑上直接跑的）
           if (mapped && mapped.state === 'done' && url.pathname === '/hook') {
-            const text = lastAssistantText(packet.session_id, packet.transcript_path);
+            const isWorkbuddy = String(packet.agent || '').toLowerCase() === 'workbuddy';
+            const text = isWorkbuddy
+              ? (String(packet.last_assistant_message || '').trim()
+                || workbuddyReply(packet.session_id, packet.transcript_path))
+              : lastAssistantText(packet.session_id, packet.transcript_path);
             if (text) {
               broadcast({ type: 'prompt_reply', ok: true, text: text.slice(0, 2000), session_id: packet.session_id });
               console.log('[bridge] hook reply:', text.slice(0, 60));

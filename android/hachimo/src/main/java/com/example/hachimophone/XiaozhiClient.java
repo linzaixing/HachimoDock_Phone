@@ -39,7 +39,7 @@ final class XiaozhiClient {
     private static final String TAG = "HachimoXiaozhi";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
     private static final MediaType JPEG = MediaType.parse("image/jpeg");
-    static final String DEFAULT_OTA_URL = "";
+    static final String DEFAULT_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/";
     private static final String BOARD_TYPE = "bread-compact-wifi";
     private static final String APP_VERSION = "2.5.4";
     private static final int IN_RATE = 16000;

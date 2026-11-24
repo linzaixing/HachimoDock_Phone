@@ -1,7 +1,8 @@
 // 一键启动 PC 端全部组件（单窗口）：
 //   1. 安装/刷新 Claude Code hooks（幂等，仓库路径变了也会自动纠正）
-//   2. 启动 Bridge（8765；若端口已被占用则复用，不重复启动）
-//   3. 启动 Codex 状态监听（自带单实例守卫）
+//   2. 安装/刷新 WorkBuddy hooks（未安装 WorkBuddy 时自动跳过）
+//   3. 启动 Bridge（8765；若端口已被占用则复用，不重复启动）
+//   4. 启动 Codex / Trae 状态监听（自带单实例守卫）
 //
 // 用法：node bridge/start-all.mjs      （Windows 可双击 bridge/start-bridge.bat）
 // Ctrl+C 会一起停掉子进程。
@@ -102,6 +103,12 @@ async function main() {
   log('start-all', '安装/刷新 Claude Code hooks…');
   const hooksOk = await runOnce('hooks', 'bridge/hooks/install-claude-hooks.mjs');
   log('start-all', hooksOk ? 'Claude hooks 就绪' : 'Claude hooks 安装失败（不影响其它组件）');
+
+  log('start-all', '检查 WorkBuddy hooks…');
+  const workbuddyOk = await runOnce('workbuddy', 'bridge/hooks/install-workbuddy-hooks.mjs');
+  log('start-all', workbuddyOk
+    ? 'WorkBuddy hooks 检查完成（未安装 WorkBuddy 时会自动跳过）'
+    : 'WorkBuddy hooks 安装失败（不影响其它组件）');
 
   if (await isPortBusy(PORT)) {
     log('start-all', `端口 ${PORT} 已在监听，复用现有 Bridge`);

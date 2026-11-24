@@ -174,7 +174,7 @@ public final class MainActivity extends Activity implements AppState.Listener {
                 "阿里云 Workspace ID（sk-ws- 密钥必填，如 llm-xxx，旧 sk- 留空）",
                 PhoneVoice.dashWorkspace(this), false);
         final EditText xzOtaInput = styledInput(
-                "http://192.168.x.x:8003/xiaozhi/ota/（必填，自建或第三方小智 OTA 地址）",
+                "https://api.tenclass.net/xiaozhi/ota/（默认官方地址，可改为自建或第三方）",
                 XiaozhiClient.otaUrl(this), false);
 
         final LinearLayout freeKeysBox = new LinearLayout(this);
