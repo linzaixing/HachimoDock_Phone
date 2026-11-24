@@ -1,0 +1,156 @@
+{
+  "units": "mm",
+  "r02_parts_reused": [
+    "01_Base",
+    "02_Base_Lid",
+    "03_Rotor",
+    "07_Driven_48T",
+    "08_Servo_24T",
+    "09_Shaft_Spacer"
+  ],
+  "parts": {
+    "01_Base": {
+      "step": "parts-step/01_Base.step",
+      "stl": "print-stl/01_Base.stl",
+      "dimensions_mm": [
+        150.0,
+        154.0,
+        41.0
+      ]
+    },
+    "02_Base_Lid": {
+      "step": "parts-step/02_Base_Lid.step",
+      "stl": "print-stl/02_Base_Lid.stl",
+      "dimensions_mm": [
+        150.0,
+        154.0,
+        8.4
+      ]
+    },
+    "03_Rotor": {
+      "step": "parts-step/03_Rotor.step",
+      "stl": "print-stl/03_Rotor.stl",
+      "dimensions_mm": [
+        126.0,
+        126.0,
+        26.05
+      ]
+    },
+    "07_Driven_48T": {
+      "step": "parts-step/07_Driven_48T.step",
+      "stl": "print-stl/07_Driven_48T.stl",
+      "dimensions_mm": [
+        31.05775,
+        31.05775,
+        8.5
+      ]
+    },
+    "08_Servo_24T": {
+      "step": "parts-step/08_Servo_24T.step",
+      "stl": "print-stl/08_Servo_24T.stl",
+      "dimensions_mm": [
+        15.77887,
+        15.77887,
+        8.5
+      ]
+    },
+    "09_Shaft_Spacer": {
+      "step": "parts-step/09_Shaft_Spacer.step",
+      "stl": "print-stl/09_Shaft_Spacer.stl",
+      "dimensions_mm": [
+        26.38,
+        26.38,
+        4.41
+      ]
+    },
+    "04_Wedge_45deg": {
+      "step": "parts-step/04_Wedge_45deg.step",
+      "stl": "print-stl/04_Wedge_45deg.stl",
+      "dimensions_mm": [
+        74.0,
+        104.0,
+        96.95
+      ]
+    },
+    "05_Jaw_Left": {
+      "step": "parts-step/05_Jaw_Left.step",
+      "stl": "print-stl/05_Jaw_Left.stl",
+      "dimensions_mm": [
+        66.12494,
+        21.3,
+        29.15
+      ]
+    },
+    "06_Jaw_Right": {
+      "step": "parts-step/06_Jaw_Right.step",
+      "stl": "print-stl/06_Jaw_Right.stl",
+      "dimensions_mm": [
+        66.12494,
+        42.9,
+        29.15
+      ]
+    },
+    "10_Clamp_Cover": {
+      "step": "parts-step/10_Clamp_Cover.step",
+      "stl": "print-stl/10_Clamp_Cover.stl",
+      "dimensions_mm": [
+        64.0,
+        42.3,
+        7.3
+      ]
+    },
+    "11_Clamp_Pinion": {
+      "step": "parts-step/11_Clamp_Pinion.step",
+      "stl": "print-stl/11_Clamp_Pinion.stl",
+      "dimensions_mm": [
+        17.59122,
+        17.59122,
+        4.75
+      ]
+    }
+  },
+  "configurations": [
+    {
+      "nominal_pad_gap_mm": 60,
+      "step": "configurations/Gap-60mm.step",
+      "spring_eye_span_mm": 22.0
+    },
+    {
+      "nominal_pad_gap_mm": 62,
+      "step": "configurations/Gap-62mm.step",
+      "spring_eye_span_mm": 23.0
+    },
+    {
+      "nominal_pad_gap_mm": 76,
+      "step": "configurations/Gap-76mm.step",
+      "spring_eye_span_mm": 30.0
+    },
+    {
+      "nominal_pad_gap_mm": 90,
+      "step": "configurations/Gap-90mm.step",
+      "spring_eye_span_mm": 37.0
+    },
+    {
+      "nominal_pad_gap_mm": 94,
+      "step": "configurations/Gap-94mm.step",
+      "spring_eye_span_mm": 39.0
+    }
+  ],
+  "reference_parts": [
+    "REF_Stop_Right_1",
+    "REF_Stop_Left_1",
+    "REF_Stop_Right_2",
+    "REF_Stop_Left_2",
+    "REF_Pinion_Shaft",
+    "REF_Cover_Screw_1",
+    "REF_Cover_Screw_2",
+    "REF_Cover_Screw_3",
+    "REF_Cover_Screw_4",
+    "REF_Spring_Right",
+    "REF_Spring_Left",
+    "REF_Fixed_Eye_Right",
+    "REF_Fixed_Eye_Left",
+    "REF_Moving_Eye_Right",
+    "REF_Moving_Eye_Left"
+  ]
+}
