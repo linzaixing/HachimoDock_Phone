@@ -1,0 +1,146 @@
+{
+  "units": "mm",
+  "parameters": {
+    "base_width": 150.0,
+    "base_depth": 154.0,
+    "base_height": 41.0,
+    "wall": 3.4,
+    "rotor_diameter": 126.0,
+    "wedge_width": 74.0,
+    "width_min": 62.0,
+    "width_max": 90.0,
+    "phone_width": 76.0,
+    "phone_thickness_max": 18.0,
+    "jaw_pad": 1.0,
+    "slide_fit": 0.35,
+    "plug_opening": 15.0,
+    "cable_bore": 15.0,
+    "bearing_fit": 0.2,
+    "shaft_fit": 0.18,
+    "servo_center": 40.3,
+    "servo_body_length": 23.0,
+    "servo_body_width": 12.6,
+    "servo_shaft_from_end": 4.5,
+    "servo_clearance": 0.35
+  },
+  "parts": {
+    "01_Base": {
+      "quantity": 1,
+      "step": "parts-step/01_Base.step",
+      "stl": "print-stl/01_Base.stl",
+      "print_dimensions_mm": [
+        150.0,
+        154.0,
+        41.0
+      ],
+      "volume_mm3": 168934.92946
+    },
+    "02_Base_Lid": {
+      "quantity": 1,
+      "step": "parts-step/02_Base_Lid.step",
+      "stl": "print-stl/02_Base_Lid.stl",
+      "print_dimensions_mm": [
+        150.0,
+        154.0,
+        8.4
+      ],
+      "volume_mm3": 181482.16606
+    },
+    "03_Rotor": {
+      "quantity": 1,
+      "step": "parts-step/03_Rotor.step",
+      "stl": "print-stl/03_Rotor.stl",
+      "print_dimensions_mm": [
+        126.0,
+        126.0,
+        26.05
+      ],
+      "volume_mm3": 77416.12049
+    },
+    "04_Wedge_45deg": {
+      "quantity": 1,
+      "step": "parts-step/04_Wedge_45deg.step",
+      "stl": "print-stl/04_Wedge_45deg.stl",
+      "print_dimensions_mm": [
+        74.0,
+        104.0,
+        96.95
+      ],
+      "volume_mm3": 97540.52613
+    },
+    "05_Jaw_Left": {
+      "quantity": 1,
+      "step": "parts-step/05_Jaw_Left.step",
+      "stl": "print-stl/05_Jaw_Left.stl",
+      "print_dimensions_mm": [
+        26.65,
+        27.8,
+        35.8
+      ],
+      "volume_mm3": 5730.17715
+    },
+    "06_Jaw_Right": {
+      "quantity": 1,
+      "step": "parts-step/06_Jaw_Right.step",
+      "stl": "print-stl/06_Jaw_Right.stl",
+      "print_dimensions_mm": [
+        26.65,
+        27.8,
+        35.8
+      ],
+      "volume_mm3": 5730.17715
+    },
+    "07_Driven_48T": {
+      "quantity": 1,
+      "step": "parts-step/07_Driven_48T.step",
+      "stl": "print-stl/07_Driven_48T.stl",
+      "print_dimensions_mm": [
+        31.05775,
+        31.05775,
+        8.5
+      ],
+      "volume_mm3": 2046.36115
+    },
+    "08_Servo_24T": {
+      "quantity": 1,
+      "step": "parts-step/08_Servo_24T.step",
+      "stl": "print-stl/08_Servo_24T.stl",
+      "print_dimensions_mm": [
+        15.77887,
+        15.77887,
+        8.5
+      ],
+      "volume_mm3": 1214.6608
+    },
+    "09_Shaft_Spacer": {
+      "quantity": 1,
+      "step": "parts-step/09_Shaft_Spacer.step",
+      "stl": "print-stl/09_Shaft_Spacer.stl",
+      "print_dimensions_mm": [
+        26.38,
+        26.38,
+        4.41
+      ],
+      "volume_mm3": 238.65214
+    }
+  },
+  "assemblies": [
+    {
+      "phone_width_mm": 62.0,
+      "step": "configurations/Clamp-62mm.step"
+    },
+    {
+      "phone_width_mm": 76.0,
+      "step": "configurations/Clamp-76mm.step"
+    },
+    {
+      "phone_width_mm": 90.0,
+      "step": "configurations/Clamp-90mm.step"
+    }
+  ],
+  "assembly_dimensions_mm": [
+    150.0,
+    154.0,
+    153.0
+  ]
+}
