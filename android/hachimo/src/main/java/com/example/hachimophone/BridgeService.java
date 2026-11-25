@@ -82,22 +82,22 @@ public final class BridgeService extends Service {
         }
     }
 
-    /** 摄像头开关：默认关，用户在内屏调试页里打开才会在对话时启动视觉 */
-    static boolean cameraEnabled(Context c) {
-        return prefs(c).getBoolean("camera_enabled", false);
-    }
-
-    static void setCameraEnabled(Context c, boolean on) {
-        prefs(c).edit().putBoolean("camera_enabled", on).apply();
-    }
-
-    /** 本地 ML Kit 识别（姿态/标签/人脸）：默认关，只保留相机画面和按需取帧 */
+    /** 本地 ML Kit 识别（人脸追踪）：默认关，只保留相机画面和按需取帧 */
     static boolean mlkitEnabled(Context c) {
         return prefs(c).getBoolean("mlkit_enabled", false);
     }
 
     static void setMlkitEnabled(Context c, boolean on) {
         prefs(c).edit().putBoolean("mlkit_enabled", on).apply();
+    }
+
+    /** 充电保护：80% 断开、30% 恢复，需要 ESP32 继电器固件配合；接好线再打开 */
+    static boolean chargeGuardEnabled(Context c) {
+        return prefs(c).getBoolean("charge_guard", false);
+    }
+
+    static void setChargeGuardEnabled(Context c, boolean on) {
+        prefs(c).edit().putBoolean("charge_guard", on).apply();
     }
 
     /**

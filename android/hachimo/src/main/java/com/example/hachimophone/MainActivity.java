@@ -480,19 +480,19 @@ public final class MainActivity extends Activity implements AppState.Listener {
         refreshSfx[0].run();
         addWeight(toggleRow, sfx, 1f, 6);
 
-        final TextView cam = pillButton("", BG_PILL, TEXT_PRIMARY);
-        final Runnable[] refreshCam = new Runnable[1];
-        refreshCam[0] = () -> {
-            boolean on = BridgeService.cameraEnabled(this);
-            cam.setText(on ? "摄像头：常开" : "摄像头：按需");
-            stylePill(cam, on ? 0xFF164E63 : BG_PILL, on ? 0xFF67E8F9 : TEXT_SECONDARY);
+        final TextView charge = pillButton("", BG_PILL, TEXT_PRIMARY);
+        final Runnable[] refreshCharge = new Runnable[1];
+        refreshCharge[0] = () -> {
+            boolean on = BridgeService.chargeGuardEnabled(this);
+            charge.setText(on ? "充电保护：开" : "充电保护：关");
+            stylePill(charge, on ? 0xFF164E63 : BG_PILL, on ? 0xFF67E8F9 : TEXT_SECONDARY);
         };
-        cam.setOnClickListener(v -> {
-            BridgeService.setCameraEnabled(this, !BridgeService.cameraEnabled(this));
-            refreshCam[0].run();
+        charge.setOnClickListener(v -> {
+            BridgeService.setChargeGuardEnabled(this, !BridgeService.chargeGuardEnabled(this));
+            refreshCharge[0].run();
         });
-        refreshCam[0].run();
-        addWeight(toggleRow, cam, 1f, 6);
+        refreshCharge[0].run();
+        addWeight(toggleRow, charge, 1f, 6);
 
         final TextView mlkit = pillButton("", BG_PILL, TEXT_PRIMARY);
         final Runnable[] refreshMlkit = new Runnable[1];

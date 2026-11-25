@@ -117,7 +117,7 @@ node bridge/test/client.mjs
 
 ### 4. 刷入 ESP32-C3 云台固件（可选）
 
-使用 PlatformIO 打开 `esp32/servo_control/` 编译烧录至 ESP32-C3（水平舵机接 `GPIO4`，俯仰接 `GPIO5`，舵机需独立 5V 供电并与开发板共地）。
+使用 PlatformIO 打开 `esp32/servo_control/` 编译烧录至 ESP32-C3（水平舵机接 `GPIO5`，俯仰接 `GPIO4`，当前只接水平舵机也能用；舵机需独立 5V 供电并与开发板共地）。
 
 ---
 
@@ -155,3 +155,4 @@ HachimoDock_Phone/
 
 - **设备兼容范围**：`Android 7.0+`（`minSdk 24`）、`arm64-v8a` 设备，非折叠屏手机自动降级在主屏运行。
 - **素材与开源协议注意**：`android/hachimo/src/main/assets/terrier/` 下的宠物视频与部分提示音来自上游 [HachimoDock](https://github.com/ai-maker-lab/HachimoDock) 的非商业源码可见素材（详见 `UPSTREAM-LICENSE.txt`），**公开二次分发或商用前请替换为自有素材**。
+- **端侧模型**：`android/hachimo/src/main/assets/movenet_lightning_int8.tflite` 为 Google MoveNet SinglePose Lightning（int8，来自 Kaggle Models `google/movenet`），Apache License 2.0；TensorFlow Lite 运行时同为 Apache 2.0。
