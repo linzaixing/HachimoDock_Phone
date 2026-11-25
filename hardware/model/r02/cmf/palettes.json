@@ -1,0 +1,16 @@
+{
+  "silver": {
+    "label": "Silver / White",
+    "body": {"color": "#BFC3C7", "roughness": 0.32, "metallic": 0.78},
+    "jaw": {"color": "#EEEFF0", "roughness": 0.37, "metallic": 0.0},
+    "rotor": {"color": "#55595F", "roughness": 0.38, "metallic": 0.65},
+    "internal": {"color": "#34383E", "roughness": 0.48, "metallic": 0.2}
+  },
+  "graphite": {
+    "label": "Graphite / Silver",
+    "body": {"color": "#46494F", "roughness": 0.36, "metallic": 0.7},
+    "jaw": {"color": "#555961", "roughness": 0.39, "metallic": 0.0},
+    "rotor": {"color": "#A5A9AE", "roughness": 0.3, "metallic": 0.78},
+    "internal": {"color": "#292C31", "roughness": 0.5, "metallic": 0.2}
+  }
+}

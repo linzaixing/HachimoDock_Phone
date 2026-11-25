@@ -1,0 +1,23 @@
+{
+  "base_width": 150.0,
+  "base_depth": 154.0,
+  "base_height": 41.0,
+  "wall": 3.4,
+  "rotor_diameter": 126.0,
+  "wedge_width": 74.0,
+  "width_min": 62.0,
+  "width_max": 90.0,
+  "phone_width": 76.0,
+  "phone_thickness_max": 18.0,
+  "jaw_pad": 1.0,
+  "slide_fit": 0.35,
+  "plug_opening": 15.0,
+  "cable_bore": 15.0,
+  "bearing_fit": 0.2,
+  "shaft_fit": 0.18,
+  "servo_center": 40.3,
+  "servo_body_length": 23.0,
+  "servo_body_width": 12.6,
+  "servo_shaft_from_end": 4.5,
+  "servo_clearance": 0.35
+}

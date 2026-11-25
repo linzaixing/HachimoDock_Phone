@@ -840,6 +840,8 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
         // 云台是独立外设：不管摄像头开没开，都试着连一下
         handler.removeCallbacks(servoRetry);
         handler.postDelayed(servoRetry, 500);
+        // 长期插电：80% 停充、30% 恢复（需要 ESP32 继电器固件）
+        startChargeGuard();
         // 声源方向跟踪（默认关，调试页里可开）
         startDoa();
         // 本机离线音色：首次在后台把模型下下来
@@ -1255,6 +1257,7 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
     private boolean forceVision;
     /** 调试用：屏幕右下角的相机预览小窗 */
     private androidx.camera.view.PreviewView camPreview;
+    private TrackingOverlayView camOverlay;
     private android.widget.FrameLayout camPreviewBox;
 
     // ------------------------------------------------------------ 声源方向（双 mic DOA）
@@ -1268,6 +1271,16 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
     private int doaProbeRate;
     /** 方向 → 云台水平的符号：实机试出来反了就把这里改成 1 */
     private static final float DOA_PAN_SIGN = -1f;
+    /** 人脸 x → 云台水平的符号：云台往人脸反方向转就改成 -1 */
+    private static final float TRACK_PAN_SIGN = 1f;
+    /** 人脸偏差每次新检测积分一次：越大追得越快，太大可能来回摆（10fps 下约 0.04） */
+    private static final float TRACK_PAN_GAIN = 0.04f;
+    /** 偏差小于这个值就不动，避免云台跟着检测抖动 */
+    private static final float TRACK_DEADBAND = 0.03f;
+    /** 增量式水平指令 0~1：人脸偏多少云台补多少，人走多远云台就能转多远 */
+    private float panCmd = 0.5f;
+    private boolean panInit;
+    private long lastTrackTs;
 
     private void startDoa() {
         // 只有调试入口会开：本机系统层给的是处理过的双声道，测不出时差，暂不对外提供开关
@@ -1324,8 +1337,8 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
     }
 
     private void startVision() {
-        // 摄像头默认关：只有「看一眼」临时拉起的视觉或调试页手动打开才启动
-        if (!forceVision && !visionOnDemand && !BridgeService.cameraEnabled(this)) {
+        // 摄像头默认关：只有「看一眼」临时拉起的视觉、调试页手动打开或开着脸追踪时才启动
+        if (!forceVision && !visionOnDemand && !BridgeService.mlkitEnabled(this)) {
             visionWanted = false;
             return;
         }
@@ -1338,7 +1351,9 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             return;
         }
         try {
-            boolean mlkit = BridgeService.mlkitEnabled(this);
+            // vision_test 调试入口强制开人脸/人体框，方便单独验证
+            boolean mlkit = forceVision || BridgeService.mlkitEnabled(this);
+            Log.i(TAG, "vision start mlkit=" + mlkit + " force=" + forceVision);
             if (mlkit && faceMemory == null) faceMemory = new FaceMemory(this);
             ensureServo();
             // 临时看图不显示预览小窗，避免对话里突然冒出一块画面
@@ -1346,6 +1361,10 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             vision = new VisionTracker(mlkit ? faceMemory : null, mlkit);
             vision.setFlipped(flipped);
             vision.start(this, useFrontCamera(), pv);
+            if (forceVision) vision.benchmarkPose();
+            panCmd = 0.5f;
+            panInit = false;
+            lastTrackTs = 0;
             if (camDot != null) camDot.setVisibility(android.view.View.VISIBLE);
         } catch (Exception e) {
             Log.e(TAG, "vision start failed", e);
@@ -1360,13 +1379,39 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
                     if (v == null) return;
                     VisionTracker.Target t = v.target();
                     BridgeService.sendVision(t.found, t.x, t.y, v.labels(), v.faceName());
-                    if (servo != null) servo.update(t.found, t.x, t.y);
-                    handler.postDelayed(this, 300);
+                    if (camOverlay != null) {
+                        camOverlay.setDetections(v.boxes(), v.frameWidth(), v.frameHeight(), flipped);
+                    }
+                    // 云台目前只装水平舵机：人脸偏多少就补多少，人走多远云台能转多远
+                    if (servo != null) {
+                        if (t.found) {
+                            if (!panInit) {
+                                panCmd = 0.5f + TRACK_PAN_SIGN * (t.x - 0.5f);
+                                panInit = true;
+                                lastTrackTs = t.ts;
+                            } else if (t.ts != lastTrackTs) {
+                                lastTrackTs = t.ts;
+                                float err = t.x - 0.5f;
+                                if (Math.abs(err) > TRACK_DEADBAND) {
+                                    panCmd += TRACK_PAN_SIGN * TRACK_PAN_GAIN * err;
+                                }
+                            }
+                            if (panCmd < 0.02f) panCmd = 0.02f;
+                            if (panCmd > 0.98f) panCmd = 0.98f;
+                            servo.update(true, panCmd, 0.5f);
+                        } else {
+                            panCmd = 0.5f;
+                            panInit = false;
+                            lastTrackTs = 0;
+                            servo.update(false, 0.5f, 0.5f);
+                        }
+                    }
+                    handler.postDelayed(this, 100);
                 }
             };
         }
         handler.removeCallbacks(visionPushTask);
-        handler.postDelayed(visionPushTask, 300);
+        handler.postDelayed(visionPushTask, 100);
     }
 
     private void stopVision() {
@@ -1379,6 +1424,7 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             stage.removeView(camPreviewBox);
             camPreviewBox = null;
             camPreview = null;
+            camOverlay = null;
         }
         if (camDot != null) camDot.setVisibility(android.view.View.GONE);
     }
@@ -1396,7 +1442,14 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
         camPreviewBox.setPadding(pad, pad, pad, pad);
         camPreview = new androidx.camera.view.PreviewView(this);
         camPreview.setScaleType(androidx.camera.view.PreviewView.ScaleType.FILL_CENTER);
+        // SurfaceView 模式下叠加的跟踪框会被压在画面下面，强制用 TextureView
+        camPreview.setImplementationMode(
+                androidx.camera.view.PreviewView.ImplementationMode.COMPATIBLE);
         camPreviewBox.addView(camPreview, new android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+        camOverlay = new TrackingOverlayView(this);
+        camPreviewBox.addView(camOverlay, new android.widget.FrameLayout.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT));
         android.widget.FrameLayout.LayoutParams lp =
@@ -1433,6 +1486,53 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             handler.postDelayed(this, 5000);
         }
     };
+
+    // ------------------------------------------------------------ 充电保护（ESP32 继电器）
+
+    /** 长期插电：80% 断开、30% 恢复；继电器常闭，ESP32 掉线会回到充电 */
+    private static final int CHARGE_STOP_LEVEL = 80;
+    private static final int CHARGE_RESUME_LEVEL = 30;
+    private Runnable chargeTask;
+    /** null=还没决定；true=已断电停充；false=正在充电 */
+    private Boolean chargeCut;
+
+    private void startChargeGuard() {
+        if (chargeTask == null) {
+            chargeTask = new Runnable() {
+                @Override
+                public void run() {
+                    checkCharge();
+                    handler.postDelayed(this, 60000);
+                }
+            };
+        }
+        handler.removeCallbacks(chargeTask);
+        handler.postDelayed(chargeTask, 2000);
+    }
+
+    private void checkCharge() {
+        android.os.BatteryManager bm = (android.os.BatteryManager)
+                getSystemService(android.content.Context.BATTERY_SERVICE);
+        if (bm == null) return;
+        ensureServo();
+        SerialServo sv = servo;
+        if (sv == null || !sv.isOpen()) return;
+        if (!BridgeService.chargeGuardEnabled(this)) {
+            if (!Boolean.FALSE.equals(chargeCut)) {
+                chargeCut = false;
+                sv.setCharging(true);
+            }
+            return;
+        }
+        int level = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY);
+        if (level <= 0 || level > 100) return;
+        if (level >= CHARGE_STOP_LEVEL) chargeCut = true;
+        else if (level <= CHARGE_RESUME_LEVEL) chargeCut = false;
+        if (chargeCut == null) return;
+        // 状态没变也每 60 秒补发一次：固件 30 分钟收不到 C 指令会兜底恢复充电
+        sv.setCharging(!chargeCut);
+        Log.i(TAG, "charge guard level=" + level + (chargeCut ? " stop" : " resume"));
+    }
 
     /** 调试用：不给视觉输入，水平/俯仰轮流 0→1000 来回扫，确认舵机接线/供电/固件正常 */
     private Runnable servoTestTask;
@@ -2151,6 +2251,10 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
         armChatIdle();
         handler.removeCallbacks(chatWatchdog);
         handler.postDelayed(chatWatchdog, 2000);
+        // 开了人脸追踪：唤醒进入长对话就自动开相机跟人（没给相机权限时会先申请）
+        if (BridgeService.mlkitEnabled(this)) {
+            handler.postDelayed(this::startVision, 400);
+        }
     }
 
     private void speakGreeting(String greet) {

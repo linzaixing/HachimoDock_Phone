@@ -1,0 +1,203 @@
+{
+  "design": "HachimoDock R02 / Silver + Graphite",
+  "cad_geometry_modified": false,
+  "source_sha256": {
+    "dimensions.json": "51e36cf0044b9aa686f4163b1a894f54fc2724300b31a26491bc3d75d64afa3d",
+    "model/HachimoDock-R02.glb": "60b7abc0dc873927c0bff0684efa8916d14a7cbe1916d1aa3231c88e0f21d910",
+    "model/HachimoDock-R02.step": "a57386a69a1770bc6ae1492f6831ab62854e341cea69ad4410e1f5b6eaa7b17e",
+    "model/configurations/Clamp-62mm.step": "6bd57948a4908350a25923a7331643c7bf169142c5b90dc591e3c4cdb06909ac",
+    "model/configurations/Clamp-76mm.step": "cd064e614971004a28f666d2a2a60942bf4f77497842c253568226cb7e2beed8",
+    "model/configurations/Clamp-90mm.step": "3d062ab8dedc6a0917b30ea4ab43c48266aad8a110571a35eff8dd8d83c54dc6",
+    "model/inventory.json": "96d4383867b0647da5694e8e2a33a664781f2435f879dd8f80a9ddd95587ac6f",
+    "model/parts-step/01_Base.step": "b7f21ac6472f1bd8132558b5cd63fd8eb011289bdfd9ff9e11253d4b7e0e2424",
+    "model/parts-step/02_Base_Lid.step": "afed5c866559fe4ef05fae08fb259ba9de505c4827a2ad2bc7b7ad1b3b902845",
+    "model/parts-step/03_Rotor.step": "034b2f426718284bc781279192679b3c53831ab0546b8268f1c0e335baad4680",
+    "model/parts-step/04_Wedge_45deg.step": "3bce016450d64ff8b60d035df00b20c8d3a289eb097c779163d7c61dce8cf485",
+    "model/parts-step/05_Jaw_Left.step": "631f1b46ab9c96bb833a7a25f81f43236c1245aba12f70d26037b80f7a6de910",
+    "model/parts-step/06_Jaw_Right.step": "0b8506768259c10ad27b614a0bb896747777fb987299674883b189ff61e048ef",
+    "model/parts-step/07_Driven_48T.step": "ff4feb5ba19f87cc5cacd9c35abad2a363f882a94bedca50ac6f74f9addf0749",
+    "model/parts-step/08_Servo_24T.step": "7c6e1d05ca6136e3648cf097431902ab5535e199480dda63067afb497733c042",
+    "model/parts-step/09_Shaft_Spacer.step": "87d6c6952acb505d1f9e3e5d2dea271810666d1783c79d908e4e9b86565b6758",
+    "model/print-stl/01_Base.stl": "e3df47f68bad0d847a3e4568934c0551895eb0f06ff84b74ba3a820ac1d96260",
+    "model/print-stl/02_Base_Lid.stl": "c84c1250674a02f06d4c4196b7c593ed2ce5a060fc4c2dae0d2c14b7cf61c072",
+    "model/print-stl/03_Rotor.stl": "ee775dcbb6c1e858fd93d259b2fc204b0947bd0e288a3fd49db64fc5b4ba46cb",
+    "model/print-stl/04_Wedge_45deg.stl": "4822cd118a0bcccd183116d9a9f95e9b96265ab424f94009aad0310c73b5583b",
+    "model/print-stl/05_Jaw_Left.stl": "6b2294b1a63c86fae2b0f315943ac8c1f21a6143b19c1006b71a862a658c2f19",
+    "model/print-stl/06_Jaw_Right.stl": "ba5582902e0f3ca8efa0c7719fd18465770c901438f149975ca3959b5bccb741",
+    "model/print-stl/07_Driven_48T.stl": "d3d09228ac51498e4a8c66ad93f809fd63a8e203b11966191ed8d4f6a91aed62",
+    "model/print-stl/08_Servo_24T.stl": "930cd0f4c93ed52ad27541871bf04084cb3464507f4debb42083b3d74b93f2ed",
+    "model/print-stl/09_Shaft_Spacer.stl": "b0712605086678e81c1e832ef4ab2bed59886bcff521fa92cb300cefa8bc3609"
+  },
+  "orthographic": {
+    "source": "model/HachimoDock-R02.step",
+    "view_order": [
+      "front",
+      "rear",
+      "left",
+      "right",
+      "top",
+      "bottom"
+    ]
+  },
+  "render_only_reference_accessories": true,
+  "palettes": {
+    "silver": {
+      "label": "Silver / White",
+      "body": {
+        "color": "#BFC3C7",
+        "roughness": 0.32,
+        "metallic": 0.78
+      },
+      "jaw": {
+        "color": "#EEEFF0",
+        "roughness": 0.37,
+        "metallic": 0.0
+      },
+      "rotor": {
+        "color": "#55595F",
+        "roughness": 0.38,
+        "metallic": 0.65
+      },
+      "internal": {
+        "color": "#34383E",
+        "roughness": 0.48,
+        "metallic": 0.2
+      }
+    },
+    "graphite": {
+      "label": "Graphite / Silver",
+      "body": {
+        "color": "#46494F",
+        "roughness": 0.36,
+        "metallic": 0.7
+      },
+      "jaw": {
+        "color": "#555961",
+        "roughness": 0.39,
+        "metallic": 0.0
+      },
+      "rotor": {
+        "color": "#A5A9AE",
+        "roughness": 0.3,
+        "metallic": 0.78
+      },
+      "internal": {
+        "color": "#292C31",
+        "roughness": 0.5,
+        "metallic": 0.2
+      }
+    }
+  },
+  "renders": [
+    {
+      "view": "hero",
+      "pixels": [
+        1800,
+        1700
+      ],
+      "samples": 20,
+      "camera_bounds": [
+        0.08639698475599289,
+        0.2548782229423523,
+        0.913602888584137,
+        0.7451217770576477
+      ]
+    },
+    {
+      "view": "silver",
+      "pixels": [
+        960,
+        880
+      ],
+      "samples": 20,
+      "camera_bounds": [
+        0.11375071853399277,
+        0.025691602379083633,
+        0.886249303817749,
+        0.9743081331253052
+      ]
+    },
+    {
+      "view": "graphite",
+      "pixels": [
+        576,
+        528
+      ],
+      "samples": 20,
+      "camera_bounds": [
+        0.11375071853399277,
+        0.025691602379083633,
+        0.886249303817749,
+        0.9743081331253052
+      ]
+    },
+    {
+      "view": "front",
+      "pixels": [
+        540,
+        495
+      ],
+      "samples": 20,
+      "camera_bounds": [
+        0.15758800506591797,
+        0.025691786780953407,
+        0.842411994934082,
+        0.9743083119392395
+      ]
+    },
+    {
+      "view": "side",
+      "pixels": [
+        540,
+        495
+      ],
+      "samples": 20,
+      "camera_bounds": [
+        0.14782384037971497,
+        0.025691786780953407,
+        0.8521761894226074,
+        0.9743083715438843
+      ]
+    },
+    {
+      "view": "rear",
+      "pixels": [
+        540,
+        495
+      ],
+      "samples": 20,
+      "camera_bounds": [
+        0.07529211789369583,
+        0.025691688060760498,
+        0.9247079491615295,
+        0.9743080735206604
+      ]
+    }
+  ],
+  "deliverables": [
+    {
+      "file": "01-orthographic.png",
+      "pixels": [
+        1800,
+        2400
+      ],
+      "sha256": "ccba2b875302ece3299bd1884ef38a1fd893cb2fd8ce25076d80234e852c0901"
+    },
+    {
+      "file": "02-design-board.png",
+      "pixels": [
+        1800,
+        2400
+      ],
+      "sha256": "52fb53c28774aebabad9b906a0eabc0c698fa90c75d374dbfea7f4845acdb0cd"
+    },
+    {
+      "file": "03-hero.png",
+      "pixels": [
+        1800,
+        2400
+      ],
+      "sha256": "7d71cc391f6264b5e373e074f4acbe38ae765d6bd9197379bf69bfcdc592db12"
+    }
+  ]
+}

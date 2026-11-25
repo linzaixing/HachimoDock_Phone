@@ -23,6 +23,7 @@ import java.util.List;
  * 协议（每 150~300ms 一行，ASCII）：
  *   P&lt;x&gt;,&lt;y&gt;\n   x/y 是 0~1000 的画面归一化坐标（0=左/上，1000=右/下）
  *   L\n            没检测到人，云台回中/待机
+ *   C0\n / C1\n    充电继电器断电（停充）/ 通电（恢复充电）
  */
 final class SerialServo {
 
@@ -36,6 +37,7 @@ final class SerialServo {
     private boolean receiverRegistered;
     private volatile java.util.concurrent.ExecutorService writeExec;
     private volatile long lastSentAt;
+    private volatile float lastSentX = -1;
     private volatile boolean lastFound;
     /** 上次弹 USB 授权框的时刻：插着没授权时别每 5 秒弹一次 */
     private volatile long lastRequestAt;
@@ -131,17 +133,27 @@ final class SerialServo {
     void update(boolean found, float x, float y) {
         if (port == null) return;
         long now = System.currentTimeMillis();
-        if (now - lastSentAt < 140) return;          // 云台不需要更高频率
-        lastSentAt = now;
+        if (now - lastSentAt < 80) return;           // 10fps 跟踪，指令最快 12.5Hz
         if (!found) {
             if (lastFound) {
                 lastFound = false;
+                lastSentAt = now;
+                lastSentX = -1;
                 write("L\n");
             }
             return;
         }
+        float cx = clamp01(x);
+        // 人脸基本没动就不重复发，避免舵机被检测抖动带着抖；
+        // 但 2 秒内补发一次：固件 3 秒收不到坐标会回中
+        if (lastFound && lastSentX >= 0 && Math.abs(cx - lastSentX) < 0.004f
+                && now - lastSentAt < 2000) {
+            return;
+        }
         lastFound = true;
-        int px = Math.round(clamp01(x) * 1000);
+        lastSentAt = now;
+        lastSentX = cx;
+        int px = Math.round(cx * 1000);
         int py = Math.round(clamp01(y) * 1000);
         write("P" + px + "," + py + "\n");
     }
@@ -171,6 +183,12 @@ final class SerialServo {
     /** 串口是否已经打开（给调试页判断用） */
     boolean isOpen() {
         return port != null;
+    }
+
+    /** 充电继电器：on=false 断开充电（80% 停），true 恢复充电（30% 起） */
+    void setCharging(boolean on) {
+        if (port == null) return;
+        write(on ? "C1\n" : "C0\n");
     }
 
     private static float clamp01(float v) {
