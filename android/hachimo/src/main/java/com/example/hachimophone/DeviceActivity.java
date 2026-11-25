@@ -80,7 +80,7 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
     private static final java.util.Random RND = new java.util.Random();
 
     private static final String[] IDLE_CLIPS = {
-            "idle.playing", "idle.wandering", "idle.begging",
+            "idle.muyu", "idle.playing", "idle.wandering", "idle.begging",
             "idle.daydreaming", "idle.eating", "idle.reading", "idle.traveling",
     };
     private static final String[] WORK_CLIPS = {"working.thinking", "working.typing", "working.browsing"};
@@ -900,7 +900,10 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
                 playLoop(nextWorkClip());
                 break;
             default:
-                playLoop(nextIdleClip());
+                // 状态刷新不等于换片：正在放 idle 系列时不要重新选片，避免启动阶段把 idle.muyu 跳过
+                if (playing == null || !playing.startsWith("idle.")) {
+                    playLoop(nextIdleClip());
+                }
         }
     }
 
@@ -1594,8 +1597,9 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
         // 手动录音正在进行：这段人声属于那一次，别再抢 voiceId
         if (recorder.isActive() || voiceBusy) return;
         if (awaitingText) {
-            // 上一句唤醒词还在识别时，先把刚说出来的下一句暂存，避免「叫完哈基米紧接着说的话」被丢掉
-            if (wakePending) {
+            // 上一句唤醒词还在识别时，先把刚说出来的下一句暂存，避免「叫完哈基米紧接着说的话」被丢掉；
+            // 表情包有声期间不暂存，避免把视频声音稍后送去识别
+            if (wakePending && !wake.isMediaPlaying()) {
                 pendingWakePcm = pcm;
                 pendingWakeMs = durationMs;
             }
@@ -1641,7 +1645,9 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             // 走阿里云识别（付费或免费 paraformer 10h/月）时均走智能分级防止长闲聊白耗额度
             mode = BridgeService.WAKE_MODE_SMART;
         }
-        final int effectiveMode = mode;
+        final int effectiveMode = wake.isMediaPlaying()
+                ? BridgeService.WAKE_MODE_STRICT : mode;
+        final boolean media = wake.isMediaPlaying();
         final int activeMs = activeSpeechMs(pcm);
         if (!KwsWake.ready()) {
             if (effectiveMode == BridgeService.WAKE_MODE_STRICT) return;
@@ -1661,7 +1667,12 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
                         || wake.isMuted() || cue != null) return;
                 if (recorder.isActive() || voiceBusy || awaitingText) return;
                 if (hit != null) {
-                    Log.i(TAG, "kws hit: " + hit + " activeMs=" + activeMs);
+                    Log.i(TAG, "kws hit: " + hit + " activeMs=" + activeMs + " media=" + media);
+                    if (media) {
+                        // 表情包有声时只做本地唤醒，不把这段音频送云端 ASR
+                        onWakeText("哈基米");
+                        return;
+                    }
                     if (activeMs > 1050 && (AppState.get().snapshot().connected || PhoneVoice.asrReady(this))) {
                         // 一口气说了「哈基米 + 问题」：直接进对话并把整段送 ASR 提取后半句，不吞提问
                         enterVoiceChat(true);
@@ -3200,7 +3211,11 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
 
     private void start(String family) {
         wanted = family;
-        if (!surfaceReady) return;                       // surfaceCreated 时会补播
+        if (!surfaceReady) {
+            // 先把想播的片记下来，避免状态刷新在 surface 就绪前反复换片
+            playing = family;
+            return;
+        }
         if (family.equals(playing) && player != null && player.isPlaying()) return;
         playing = family;
         Log.i(TAG, "clip " + family);
@@ -3214,6 +3229,10 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             mp.setOnPreparedListener(p -> {
                 if (p == player) {
                     playerPrepared = true;
+                    // 带音轨的表情包播放期间静音收音，和 cue/对话的 mute 互不影响
+                    boolean hasAudio = hasAudioTrack(p);
+                    wake.setMediaPlaying(hasAudio);
+                    Log.i(TAG, "clip " + family + " audio=" + hasAudio);
                     if (resumed) p.start();
                 }
             });
@@ -3222,6 +3241,7 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
             });
             mp.setOnErrorListener((p, what, extra) -> {
                 Log.e(TAG, "clip error " + family + " what=" + what + " extra=" + extra);
+                wake.setMediaPlaying(false);
                 return true;
             });
             player = mp;
@@ -3233,6 +3253,7 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
 
     private void onClipEnd() {
         oneShot = false;
+        wake.setMediaPlaying(false);
         resumeState();
     }
 
@@ -3263,8 +3284,22 @@ public final class DeviceActivity extends Activity implements AppState.Listener,
         return f;
     }
 
+    /** 判断表情包视频是否自带音轨：有音轨才需要静音收音 */
+    private static boolean hasAudioTrack(MediaPlayer mp) {
+        try {
+            for (MediaPlayer.TrackInfo ti : mp.getTrackInfo()) {
+                if (ti.getTrackType() == MediaPlayer.TrackInfo.MEDIA_TRACK_TYPE_AUDIO) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
     private void releasePlayer() {
         playerPrepared = false;
+        wake.setMediaPlaying(false);
         if (player == null) return;
         MediaPlayer mp = player;
         player = null;

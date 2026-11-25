@@ -54,6 +54,8 @@ final class WakeListener {
     private volatile boolean running;
     /** 播放回复时暂停判决（麦克风仍然开着，只是不再切片段） */
     private volatile boolean muted;
+    /** 表情包带音轨时只标记状态：仍切片段给本地 KWS，不送云端 ASR */
+    private volatile boolean mediaPlaying;
     private volatile int gen;
 
     boolean isRunning() {
@@ -62,6 +64,10 @@ final class WakeListener {
 
     boolean isMuted() {
         return muted;
+    }
+
+    boolean isMediaPlaying() {
+        return mediaPlaying;
     }
 
     @android.annotation.SuppressLint("MissingPermission")
@@ -117,6 +123,12 @@ final class WakeListener {
 
     void unmute() {
         muted = false;
+    }
+
+    /** 表情包视频带音轨时调用：只标记媒体播放，KWS 仍可唤醒，但不送云端 */
+    void setMediaPlaying(boolean on) {
+        mediaPlaying = on;
+        Log.i(TAG, "wake media playing " + on);
     }
 
     void stop() {
